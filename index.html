@@ -9,7 +9,13 @@
 
   <h2>Climate Indicators — Interactive World Map</h2>
 
-  
+ <div id="controls">
+    <label>Year: <span id="yearLabel">1990</span></label>
+    <input id="yearSlider" type="range" min="1990" max="2024" step="1" value="1990">
+
+    <button id="modeTemp">Temperature</button>
+    <button id="modeSea">Sea Level</button>
+  </div>
 
   <div id="map"></div>
 
