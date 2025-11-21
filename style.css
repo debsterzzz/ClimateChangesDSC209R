@@ -1,33 +1,65 @@
+/* ----------- General Layout ----------- */
+
 body {
-  font-family: sans-serif;
   margin: 0;
-  padding: 0;
+  font-family: Arial, sans-serif;
+  background: #fafafa;
 }
 
-#map {
-  height: 650px;
-  width: 100%;
+h2 {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 28px;
+  font-weight: 600;
 }
+
+/* ----------- Controls ----------- */
 
 #controls {
-  padding: 10px;
-  background: white;
   display: flex;
   justify-content: center;
-  gap: 20px;
   align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  gap: 20px;
+  background: white;
+  padding: 12px 20px;
+  margin: 15px auto;
+  border-radius: 8px;
+  width: fit-content;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
+
+#controls button {
+  padding: 6px 12px;
+  background: #ddd;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#controls button:hover {
+  background: #ccc;
+}
+
+/* ----------- Map Container ----------- */
+
+#map {
+  width: 100%;
+  height: 650px;
+  border-top: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+}
+
+/* ----------- Tooltip ----------- */
 
 #tooltip {
   position: absolute;
   background: white;
-  padding: 8px;
-  border: 1px solid #ddd;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
   border-radius: 6px;
-  display: none;
-  pointer-events: none;
   font-size: 13px;
+  pointer-events: none;
+  display: none;
+  box-shadow: 0px 2px 8px rgba(0,0,0,0.15);
 }
