@@ -3,11 +3,13 @@
 <head>
   <title>Climate Indicators Map</title>
 
-  <!-- Mapbox CSS -->
-  <link href="https://unpkg.com/mapbox-gl@2.16.1/dist/mapbox-gl.css" rel="stylesheet" />
+<link
+  href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css"
+  rel="stylesheet"
+/>
 
-  <!-- Your CSS -->
-  <link rel="stylesheet" href="style.css" />
+
+
 </head>
 
 <body>
@@ -25,14 +27,15 @@
   <div id="map"></div>
   <div id="tooltip"></div>
 
-  <!-- ========================= -->
-  <!-- MOVE ALL SCRIPTS HERE ↓↓↓ -->
-  <!-- ========================= -->
 
-  <!-- Mapbox JS -->
-  <script src="https://unpkg.com/mapbox-gl@2.16.1/dist/mapbox-gl.js"></script>
+  <!-- ALL SCRIPTS MUST BE HERE — BELOW -->
 
-  <!-- D3 -->
+  <script
+  src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"
+></script>
+
+
+  <!-- D3 Libraries -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
 
@@ -41,4 +44,3 @@
 
 </body>
 </html>
-

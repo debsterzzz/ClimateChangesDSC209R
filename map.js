@@ -1,11 +1,10 @@
-mapboxgl.accessToken = "pk.eyJ1IjoiZGVic3Rlcnp6eiIsImEiOiJjbWh6bG0zZ2QwbXB4MmxvbXIwYjFsdDVjIn0.sgktxgtMW3K5gz86SJ-oVA";
-
-const map = new mapboxgl.Map({
+const map = new maplibregl.Map({
   container: "map",
-  style: "mapbox://styles/mapbox/light-v11",
+  style: "https://demotiles.maplibre.org/style.json",
   center: [0, 20],
   zoom: 1.3
 });
+
 
 // Global Variables
 let tempData, seaData;
