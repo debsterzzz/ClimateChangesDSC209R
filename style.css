@@ -1,0 +1,33 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+#map {
+  height: 650px;
+  width: 100%;
+}
+
+#controls {
+  padding: 10px;
+  background: white;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+#tooltip {
+  position: absolute;
+  background: white;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  display: none;
+  pointer-events: none;
+  font-size: 13px;
+}

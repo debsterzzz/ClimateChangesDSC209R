@@ -117,3 +117,27 @@ function setupInteraction() {
   setupTooltip();
 }
 
+// Tooltip on Hover
+function setupTooltip() {
+  const tooltip = document.getElementById("tooltip");
+
+  map.on("mousemove", "climate-fill", e => {
+    const f = e.features[0];
+    const props = f.properties;
+
+    tooltip.style.display = "block";
+    tooltip.style.left = e.point.x + 15 + "px";
+    tooltip.style.top = e.point.y + 15 + "px";
+
+    tooltip.innerHTML = `
+      <strong>${props.ADMIN}</strong><br>
+      Year: ${currentYear}<br>
+      ${mode === "temp" ? "Temp Anomaly" : "Sea Level"}:
+      <strong>${props.value !== undefined && props.value !== null ? props.value.toFixed(2) : "N/A"}</strong>
+    `;
+  });
+
+  map.on("mouseleave", "climate-fill", () => {
+    tooltip.style.display = "none";
+  });
+}
