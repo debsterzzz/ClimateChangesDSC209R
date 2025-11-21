@@ -10,6 +10,7 @@ const map = new maplibregl.Map({
 
 // Global Variables
 let tempData, seaData;
+let seaByYear = {};
 let currentYear = 1990;
 let mode = "temp"; // "temp" or "sea"
 
@@ -20,8 +21,8 @@ function getTempColor(v) {
 }
 
 function getSeaColor(v) {
-  // Sea level change scale (0–200 mm)
-  return d3.interpolateBlues(Math.min(v / 200, 1));
+  const t = (v - minSea) / (maxSea - minSea);
+  return d3.interpolateBlues(Math.max(0, Math.min(t, 1)));
 }
 
 // Load GeoJSON Files
@@ -37,6 +38,8 @@ Promise.all([
 
   console.log("Temperature Data Loaded:", temp);
   console.log("Sea Level Data Loaded:", sea);
+ // Extract global sea-level values by year
+  processSeaLevels(seaData);
 
   map.on("load", () => {
     // Add one source — data swapped dynamically
@@ -53,7 +56,7 @@ Promise.all([
       paint: {
         "fill-color": ["get", "value_color"],
         "fill-opacity": 0.8,
-        "fill-outline-color": "#555"
+        "fill-outline-color": "#444"
       }
     });
 
@@ -62,23 +65,50 @@ Promise.all([
   });
 });
 
+// Convert sea-level data to year → average value
+// ----------------------------
+function processSeaLevels(gdf) {
+  const yearly = {};
+
+  gdf.features.forEach(f => {
+    const props = f.properties;
+    const date = props.Date;      // "D10/17/1992"
+    const val = props.Value;      // numeric
+
+    if (!date || val == null) return;
+
+    const year = parseInt(date.slice(-4)); // extract "1992"
+
+    if (!yearly[year]) yearly[year] = [];
+    yearly[year].push(val);
+  });
+
+  // Average the values per year
+  Object.keys(yearly).forEach(year => {
+    const arr = yearly[year];
+    seaByYear[year] = arr.reduce((a, b) => a + b, 0) / arr.length;
+  });
+
+  console.log("Sea level (avg) by year:", seaByYear);
+}
+
+
+
 // Update the map based on current year + mode
 function updateMap() {
   const src = map.getSource("climate");
 
-  // Choose dataset
-  const dataset = (mode === "temp") ? tempData : seaData;
+// Update LAND (temp)
 
   const updated = {
-    ...dataset,
-    features: dataset.features.map(f => {
+    ...tempData,
+    features: tempData.features.map(f => {
       const props = f.properties;
       const val = props[currentYear];
 
       let color = "#ccc";
-      if (val !== null && val !== undefined && val !== "") {
-        color = (mode === "temp") ? getTempColor(val) : getSeaColor(val);
-      }
+      if (val !== null && val !== undefined && val !== "") 
+        color = getTempColor(val) ;
 
       return {
         ...f,
@@ -92,7 +122,28 @@ function updateMap() {
   };
 
   src.setData(updated);
+
+// Update OCEAN (sea-level)
+  // ---------------------
+  const seaVal = seaByYear[currentYear];
+  const allVals = Object.values(seaByYear);
+  const minSea = Math.min(...allVals);
+  const maxSea = Math.max(...allVals);
+
+  let oceanColor = "#aac6ff"; // fallback
+  if (seaVal != null) {
+    oceanColor = getSeaColor(seaVal, minSea, maxSea);
+  }
+
+  // Paint the WATER layer in the basemap
+  try {
+    map.setPaintProperty("water", "fill-color", oceanColor);
+  } catch (e) {
+    console.warn("Water layer not ready yet:", e);
+  }
 }
+
+
 
 // Slider + Toggle Buttons
 function setupInteraction() {
@@ -126,15 +177,15 @@ function setupTooltip() {
     const f = e.features[0];
     const props = f.properties;
 
-    tooltip.style.display = "block";
+    tooltip.style.display = mode === "temp" ? "block": "none";
     tooltip.style.left = e.point.x + 15 + "px";
     tooltip.style.top = e.point.y + 15 + "px";
 
     tooltip.innerHTML = `
       <strong>${props.ADMIN}</strong><br>
       Year: ${currentYear}<br>
-      ${mode === "temp" ? "Temp Anomaly" : "Sea Level"}:
-      <strong>${props.value !== undefined && props.value !== null ? props.value.toFixed(2) : "N/A"}</strong>
+      Temp Anomaly:
+      <strong>${props.value != null ? props.value.toFixed(2) : "N/A"}</strong>
     `;
   });
 
