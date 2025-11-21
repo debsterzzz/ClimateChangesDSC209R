@@ -1,10 +1,12 @@
+// --------------------
+// Initialize MapLibre
+// --------------------
 const map = new maplibregl.Map({
   container: "map",
-  style: "https://demotiles.maplibre.org/style.json",
+  style: "https://demotiles.maplibre.org/style.json", // Open-source basemap
   center: [0, 20],
   zoom: 1.3
 });
-
 
 // Global Variables
 let tempData, seaData;
@@ -24,8 +26,10 @@ function getSeaColor(v) {
 
 // Load GeoJSON Files
 Promise.all([
-  fetch("data/Indicator_3_1_Climate_Indicators_Annual_Mean_Global_Surface_Temperature_5943755526554557319.geojson").then(r => r.json()),
-  fetch("data/Indicator_3_3_melted_new_-7232464109204630623.geojson").then(r => r.json())
+  fetch("data/Indicator_3_1_Climate_Indicators_Annual_Mean_Global_Surface_Temperature_5943755526554557319.geojson")
+    .then(r => r.json()),
+  fetch("data/Indicator_3_3_melted_new_-7232464109204630623.geojson")
+    .then(r => r.json())
 ])
 .then(([temp, sea]) => {
   tempData = temp;
@@ -35,13 +39,13 @@ Promise.all([
   console.log("Sea Level Data Loaded:", sea);
 
   map.on("load", () => {
-    // Add a single source — we will swap data inside it
+    // Add one source — data swapped dynamically
     map.addSource("climate", {
       type: "geojson",
       data: tempData
     });
 
-    // Add the choropleth layer
+    // Add fill layer
     map.addLayer({
       id: "climate-fill",
       type: "fill",
@@ -69,7 +73,7 @@ function updateMap() {
     ...dataset,
     features: dataset.features.map(f => {
       const props = f.properties;
-      const val = props[currentYear]; // value for the selected year
+      const val = props[currentYear];
 
       let color = "#ccc";
       if (val !== null && val !== undefined && val !== "") {
@@ -87,10 +91,8 @@ function updateMap() {
     })
   };
 
-  // Update the map layer data
   src.setData(updated);
 }
-
 
 // Slider + Toggle Buttons
 function setupInteraction() {
