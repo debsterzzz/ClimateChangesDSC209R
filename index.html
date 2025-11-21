@@ -2,18 +2,19 @@
 <html>
 <head>
   <title>Climate Indicators Map</title>
- 
+
+  <!-- Mapbox CSS -->
   <link href="https://unpkg.com/mapbox-gl@2.16.1/dist/mapbox-gl.css" rel="stylesheet" />
 
-    <script src="https://unpkg.com/mapbox-gl@2.16.1/dist/mapbox-gl.js"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+  <!-- Your CSS -->
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
   <h2>Climate Indicators — Interactive World Map</h2>
 
- <div id="controls">
+  <div id="controls">
     <label>Year: <span id="yearLabel">1990</span></label>
     <input id="yearSlider" type="range" min="1990" max="2024" step="1" value="1990">
 
@@ -24,8 +25,20 @@
   <div id="map"></div>
   <div id="tooltip"></div>
 
+  <!-- ========================= -->
+  <!-- MOVE ALL SCRIPTS HERE ↓↓↓ -->
+  <!-- ========================= -->
 
+  <!-- Mapbox JS -->
+  <script src="https://unpkg.com/mapbox-gl@2.16.1/dist/mapbox-gl.js"></script>
+
+  <!-- D3 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+
+  <!-- Your Map Code -->
   <script src="map.js"></script>
 
 </body>
 </html>
+
