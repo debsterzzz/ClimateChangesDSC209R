@@ -1,12 +1,11 @@
-// --------------------
 // Initialize MapLibre
-// --------------------
 const map = new maplibregl.Map({
   container: "map",
-  style: "https://demotiles.maplibre.org/style.json", // Open-source basemap
+  style: "data/style.json",
   center: [0, 20],
   zoom: 1.3
 });
+
 
 // Global Variables
 let tempData, seaData;
@@ -20,7 +19,7 @@ function getTempColor(v) {
   return d3.interpolateYlOrRd((v + 2) / 5);
 }
 
-function getSeaColor(v) {
+function getSeaColor(v, minSea, maxSea) {
   const t = (v - minSea) / (maxSea - minSea);
   return d3.interpolateBlues(Math.max(0, Math.min(t, 1)));
 }
@@ -42,6 +41,24 @@ Promise.all([
   processSeaLevels(seaData);
 
   map.on("load", () => {
+
+    // ADD OCEAN MASK
+    //------------------------------------------
+    map.addSource("ocean-mask", {
+      type: "geojson",
+      data: "data/oceans.geojson"
+    });
+
+    map.addLayer({
+      id: "ocean-fill",
+      type: "fill",
+      source: "ocean-mask",
+      paint: {
+        "fill-color": "#aadaff",
+        "fill-opacity": 1.0
+      }
+    }, "raster-tiles");
+
     // Add one source — data swapped dynamically
     map.addSource("climate", {
       type: "geojson",
@@ -55,11 +72,11 @@ Promise.all([
       source: "climate",
       paint: {
         "fill-color": ["get", "value_color"],
-        "fill-opacity": 0.8,
+        "fill-opacity": 0.85,
         "fill-outline-color": "#444"
       }
     });
-
+    updateLegend();
     setupInteraction();
     updateMap();
   });
@@ -71,9 +88,9 @@ function processSeaLevels(gdf) {
   const yearly = {};
 
   gdf.features.forEach(f => {
-    const props = f.properties;
-    const date = props.Date;      // "D10/17/1992"
-    const val = props.Value;      // numeric
+    const p = f.properties;
+    const date = p.Date;      // "D10/17/1992"
+    const val = p.Value;      // numeric
 
     if (!date || val == null) return;
 
@@ -84,9 +101,9 @@ function processSeaLevels(gdf) {
   });
 
   // Average the values per year
-  Object.keys(yearly).forEach(year => {
-    const arr = yearly[year];
-    seaByYear[year] = arr.reduce((a, b) => a + b, 0) / arr.length;
+  Object.keys(yearly).forEach(y => {
+    const arr = yearly[y];
+    seaByYear[y] = arr.reduce((a, b) => a + b, 0) / arr.length;
   });
 
   console.log("Sea level (avg) by year:", seaByYear);
@@ -107,9 +124,9 @@ function updateMap() {
       const val = props[currentYear];
 
       let color = "#ccc";
-      if (val !== null && val !== undefined && val !== "") 
+      if (val != null && val !== "") {
         color = getTempColor(val) ;
-
+      }
       return {
         ...f,
         properties: {
@@ -137,7 +154,7 @@ function updateMap() {
 
   // Paint the WATER layer in the basemap
   try {
-    map.setPaintProperty("water", "fill-color", oceanColor);
+    map.setPaintProperty("ocean-fill", "fill-color", oceanColor);
   } catch (e) {
     console.warn("Water layer not ready yet:", e);
   }
@@ -154,16 +171,22 @@ function setupInteraction() {
     currentYear = +e.target.value;
     yearLabel.textContent = currentYear;
     updateMap();
+    updateLegend();
+
   };
 
   document.getElementById("modeTemp").onclick = () => {
     mode = "temp";
     updateMap();
+    updateLegend();
+
   };
 
   document.getElementById("modeSea").onclick = () => {
     mode = "sea";
     updateMap();
+    updateLegend();
+
   };
 
   setupTooltip();
@@ -174,10 +197,16 @@ function setupTooltip() {
   const tooltip = document.getElementById("tooltip");
 
   map.on("mousemove", "climate-fill", e => {
+
+        if (mode !== "temp") {
+      tooltip.style.display = "none";
+      return;
+    }
+
     const f = e.features[0];
     const props = f.properties;
 
-    tooltip.style.display = mode === "temp" ? "block": "none";
+    tooltip.style.display = "block";
     tooltip.style.left = e.point.x + 15 + "px";
     tooltip.style.top = e.point.y + 15 + "px";
 
@@ -192,4 +221,70 @@ function setupTooltip() {
   map.on("mouseleave", "climate-fill", () => {
     tooltip.style.display = "none";
   });
+}
+
+
+//------------------------------------------
+// LEGEND RENDERING
+//------------------------------------------
+function updateLegend() {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = ""; // clear
+
+  const title = document.createElement("div");
+  title.className = "legend-title";
+
+  const bar = document.createElement("div");
+  bar.className = "legend-bar";
+
+  const labels = document.createElement("div");
+  labels.className = "legend-labels";
+
+  let minLabel, maxLabel;
+
+  if (mode === "temp") {
+    title.textContent = "Temperature Anomaly (°C)";
+
+    bar.style.background = `
+      linear-gradient(to right,
+        ${d3.interpolateYlOrRd(0)}, 
+        ${d3.interpolateYlOrRd(0.25)}, 
+        ${d3.interpolateYlOrRd(0.5)},
+        ${d3.interpolateYlOrRd(0.75)},
+        ${d3.interpolateYlOrRd(1)})
+    `;
+
+    minLabel = "-2°C";
+    maxLabel = "+3°C";
+  }
+
+  else if (mode === "sea") {
+    title.textContent = "Global Sea Level (mm)";
+
+    // Get sea-level range dynamically
+    const vals = Object.values(seaByYear);
+    const minSea = Math.min(...vals);
+    const maxSea = Math.max(...vals);
+
+    bar.style.background = `
+      linear-gradient(to right,
+        ${d3.interpolateBlues(0)},
+        ${d3.interpolateBlues(0.25)},
+        ${d3.interpolateBlues(0.5)},
+        ${d3.interpolateBlues(0.75)},
+        ${d3.interpolateBlues(1)})
+    `;
+
+    minLabel = `${minSea.toFixed(0)} mm`;
+    maxLabel = `${maxSea.toFixed(0)} mm`;
+  }
+
+  labels.innerHTML = `
+    <span>${minLabel}</span>
+    <span>${maxLabel}</span>
+  `;
+
+  legend.appendChild(title);
+  legend.appendChild(bar);
+  legend.appendChild(labels);
 }
