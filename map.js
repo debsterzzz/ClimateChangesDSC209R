@@ -6,17 +6,22 @@ const map = new maplibregl.Map({
   zoom: 1.3
 });
 
-
 // Global Variables
-let tempData, seaData;
+let worldGeom;       // geometry-only world countries
+let tempTable;       // temperature table (by ISO3)
+let tempByISO = {};  // lookup: ISO3 -> properties row
+let seaData;
 let seaByYear = {};
-let currentYear = 1990;
+let currentYear = 1992;
 let mode = "temp"; // "temp" or "sea"
 
-// Color Scales
+// -----------------------------
+// COLOR SCALES
+// -----------------------------
 function getTempColor(v) {
   // Temperature anomaly scale (-2 to +3°C)
-  return d3.interpolateYlOrRd((v + 2) / 5);
+  const t = (v + 2) / 5;            // map [-2,3] -> [0,1]
+  return d3.interpolateYlOrRd(Math.max(0, Math.min(t, 1)));
 }
 
 function getSeaColor(v, minSea, maxSea) {
@@ -24,26 +29,82 @@ function getSeaColor(v, minSea, maxSea) {
   return d3.interpolateBlues(Math.max(0, Math.min(t, 1)));
 }
 
-// Load GeoJSON Files
+// -----------------------------
+// TEMP TABLE LOOKUP
+// -----------------------------
+function getTempValue(props, year) {
+  // props here are from the *temp table* (Indicator_3_1_...)
+  const candidates = [
+    String(year),   // "1992"
+    "F" + year,     // "F1992"
+    "Y" + year      // "Y1992" just in case
+  ];
+
+  for (const key of candidates) {
+    if (Object.prototype.hasOwnProperty.call(props, key)) {
+      const raw = props[key];
+      if (raw == null || raw === "" || Number.isNaN(Number(raw))) return null;
+      return Number(raw);
+    }
+  }
+  return null;
+}
+
+// -----------------------------
+// LOAD DATA
+// -----------------------------
 Promise.all([
+  // 1) World geometry (your climate_world_joined.json is basically this)
+  fetch("data/climate_world_joined.json").then(r => r.json()),
+
+  // 2) Temperature table (geometry = null, but has ISO3 + year columns)
   fetch("data/Indicator_3_1_Climate_Indicators_Annual_Mean_Global_Surface_Temperature_5943755526554557319.geojson")
     .then(r => r.json()),
+
+  // 3) Sea-level data
   fetch("data/Indicator_3_3_melted_new_-7232464109204630623.geojson")
     .then(r => r.json())
-])
-.then(([temp, sea]) => {
-  tempData = temp;
+]).then(([world, tempTableGeo, sea]) => {
+  worldGeom = world;
   seaData = sea;
+  tempTable = tempTableGeo;
 
-  console.log("Temperature Data Loaded:", temp);
-  console.log("Sea Level Data Loaded:", sea);
- // Extract global sea-level values by year
+  console.log("World geom (climate source):", worldGeom);
+  console.log("Temp table:", tempTable);
+  console.log("Sea level data:", seaData);
+
+  // Build ISO3 -> temp-row lookup from the temp table
+  tempTable.features.forEach(f => {
+    const p = f.properties || {};
+    const iso = (p.ISO3 || "").trim();
+    if (iso) tempByISO[iso] = p;
+  });
+
   processSeaLevels(seaData);
 
   map.on("load", () => {
+    // 1) CLIMATE SOURCE + LAYER (on top of ocean, below labels)
+    map.addSource("climate", {
+      type: "geojson",
+      data: worldGeom
+    });
 
-    // ADD OCEAN MASK
-    //------------------------------------------
+    map.addLayer({
+      id: "climate-fill",
+      type: "fill",
+      source: "climate",
+      paint: {
+        "fill-color": [
+          "coalesce",
+          ["get", "value_color"],
+          "#e0e0e0"          // light grey fallback if no data
+        ],
+        "fill-opacity": 0.75,
+        "fill-outline-color": "#444"
+      }
+    });
+
+    // 2) OCEAN MASK SOURCE + LAYER (below climate)
     map.addSource("ocean-mask", {
       type: "geojson",
       data: "data/oceans.geojson"
@@ -54,33 +115,18 @@ Promise.all([
       type: "fill",
       source: "ocean-mask",
       paint: {
-        "fill-color": "#aadaff",
+        "fill-color": "#aac6ff",
         "fill-opacity": 1.0
       }
-    }, "raster-tiles");
+    }, "climate-fill");  // ocean drawn just under climate
 
-    // Add one source — data swapped dynamically
-    map.addSource("climate", {
-      type: "geojson",
-      data: tempData
-    });
-
-    // Add fill layer
-    map.addLayer({
-      id: "climate-fill",
-      type: "fill",
-      source: "climate",
-      paint: {
-        "fill-color": ["get", "value_color"],
-        "fill-opacity": 0.85,
-        "fill-outline-color": "#444"
-      }
-    });
-    updateLegend();
+    // Kick everything off
     setupInteraction();
+    updateLegend();
     updateMap();
   });
 });
+
 
 // Convert sea-level data to year → average value
 // ----------------------------
@@ -114,25 +160,38 @@ function processSeaLevels(gdf) {
 // Update the map based on current year + mode
 function updateMap() {
   const src = map.getSource("climate");
+  if (!src || !worldGeom) return;
 
-// Update LAND (temp)
-
+  // ----- LAND (temperature) -----
   const updated = {
-    ...tempData,
-    features: tempData.features.map(f => {
-      const props = f.properties;
-      const val = props[currentYear];
+    ...worldGeom,
+    features: worldGeom.features.map(f => {
+      const props = f.properties || {};
 
-      let color = "#ccc";
-      if (val != null && val !== "") {
-        color = getTempColor(val) ;
+      // figure out which ISO3 field this geometry uses
+      const iso =
+        (props.ISO3 ||
+         props.ISO_A3 ||
+         props.ADM0_A3 ||
+         props.adm0_a3 ||
+         props.SOV_A3 ||
+         props.sov_a3 ||
+         "").trim();
+
+      const tempRow = iso ? tempByISO[iso] : null;
+      const val = tempRow ? getTempValue(tempRow, currentYear) : null;
+
+      let color = null;
+      if (val != null) {
+        color = getTempColor(val);
       }
+
       return {
         ...f,
         properties: {
           ...props,
           value: val,
-          value_color: color
+          value_color: color   // may be null; layer fallback handles it
         }
       };
     })
@@ -140,8 +199,7 @@ function updateMap() {
 
   src.setData(updated);
 
-// Update OCEAN (sea-level)
-  // ---------------------
+  // ----- OCEAN (sea level) -----
   const seaVal = seaByYear[currentYear];
   const allVals = Object.values(seaByYear);
   const minSea = Math.min(...allVals);
@@ -152,7 +210,6 @@ function updateMap() {
     oceanColor = getSeaColor(seaVal, minSea, maxSea);
   }
 
-  // Paint the WATER layer in the basemap
   try {
     map.setPaintProperty("ocean-fill", "fill-color", oceanColor);
   } catch (e) {
@@ -205,13 +262,14 @@ function setupTooltip() {
 
     const f = e.features[0];
     const props = f.properties;
+    const name = props.Country || props.ADMIN || props.NAME || "Unknown";
 
     tooltip.style.display = "block";
     tooltip.style.left = e.point.x + 15 + "px";
     tooltip.style.top = e.point.y + 15 + "px";
 
     tooltip.innerHTML = `
-      <strong>${props.ADMIN}</strong><br>
+      <strong>${name}</strong><br>
       Year: ${currentYear}<br>
       Temp Anomaly:
       <strong>${props.value != null ? props.value.toFixed(2) : "N/A"}</strong>
