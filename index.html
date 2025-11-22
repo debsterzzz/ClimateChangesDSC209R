@@ -17,7 +17,12 @@
 <body>
 
   <h2>Climate Indicators — Interactive World Map</h2>
-
+  <h3> Write up</h3>
+<li> So far, we have built the world map framework and created the year slider to control the visualization. 
+  In addition, we plan to implement clearer ocean color changes using sea-level data. The next step is layer temperature change and natural disaster annotations into the map.
+Overall, the core structure of the visualization is in place. The most challenging part will be to cohesively integrate multiple datasets - sea levels, temperature change, and natural disasters without makeing the visualization slow or inconvenient to use. 
+Since the visual will animate over the course of time, designing smooth and synchronzied transitions will take trial and error. It will also be challenging to keep the design visually clear, but also informative.
+Working with multiple datasets can be hard to manage and present, so we need to make sure that our storytelling is direct and easily understandable </li>
   <div id="controls">
     <label for="yearSlider">Year: <span id="yearLabel">1990</span></label>
     <input id="yearSlider" type="range" min="1992" max="2010" step="1" value="1992">
