@@ -155,85 +155,141 @@ function processSeaLevels(gdf) {
   console.log("Sea level (avg) by year:", seaByYear);
 }
 
+function getCountryName(props) {
+  if (props.sovereignt) {
+    name = props.sovereignt
+  }
+  else {
+    name = (
+      props.ADMIN ||
+      props.ADMIN0_A3 ||
+      props.NAME ||
+      props.ADM0_A3 ||
+      props.adm0_a3 ||
+      props.SOV_A3 ||
+      "Unknown"
+    );
+  }
+  return name
+}
 
+const featureValues = {};
 
-// Update the map based on current year + mode
-function updateMap() {
+function updateMap(year = currentYear) {
   const src = map.getSource("climate");
   if (!src || !worldGeom) return;
 
   // ----- LAND (temperature) -----
-  const updated = {
-    ...worldGeom,
-    features: worldGeom.features.map(f => {
-      const props = f.properties || {};
+  if (mode === "temp") {
+    const updated = {
+      ...worldGeom,
+      features: worldGeom.features.map(f => {
+        const props = f.properties || {};
 
-      // figure out which ISO3 field this geometry uses
-      const iso =
-        (props.ISO3 ||
-         props.ISO_A3 ||
-         props.ADM0_A3 ||
-         props.adm0_a3 ||
-         props.SOV_A3 ||
-         props.sov_a3 ||
-         "").trim();
+        const iso = (props.ISO3 || props.ISO_A3 || props.ADM0_A3 || props.adm0_a3 || props.SOV_A3 || props.sov_a3 || "").trim();
+        const tempRow = iso ? tempByISO[iso] : null;
+        const targetVal = tempRow ? getTempValue(tempRow, year) : null;
 
-      const tempRow = iso ? tempByISO[iso] : null;
-      const val = tempRow ? getTempValue(tempRow, currentYear) : null;
+        // Smooth interpolation
+        const prevVal = featureValues[iso]?.value ?? targetVal ?? 0;
+        const smoothVal = targetVal != null ? lerp(prevVal, targetVal, 0.2) : null;
 
-      let color = null;
-      if (val != null) {
-        color = getTempColor(val);
-      }
+        // Store the last drawn value
+        featureValues[iso] = { value: smoothVal };
 
-      return {
-        ...f,
-        properties: {
-          ...props,
-          value: val,
-          value_color: color   // may be null; layer fallback handles it
-        }
-      };
-    })
-  };
+        const color = smoothVal != null ? getTempColor(smoothVal) : "#e0e0e0";
 
-  src.setData(updated);
+        return {
+          ...f,
+          properties: {
+            ...props,
+            value: smoothVal,
+            value_color: color
+          }
+        };
+      })
+    };
 
-  // ----- OCEAN (sea level) -----
-  const seaVal = seaByYear[currentYear];
-  const allVals = Object.values(seaByYear);
-  const minSea = Math.min(...allVals);
-  const maxSea = Math.max(...allVals);
-
-  let oceanColor = "#aac6ff"; // fallback
-  if (seaVal != null) {
-    oceanColor = getSeaColor(seaVal, minSea, maxSea);
+    src.setData(updated);
   }
 
-  try {
-    map.setPaintProperty("ocean-fill", "fill-color", oceanColor);
-  } catch (e) {
-    console.warn("Water layer not ready yet:", e);
+  if (mode == "sea") {
+    // ----- OCEAN (sea level) -----
+    const seaVal = seaByYear[currentYear];
+    const allVals = Object.values(seaByYear);
+    const minSea = Math.min(...allVals);
+    const maxSea = Math.max(...allVals);
+
+    let oceanColor = "#aac6ff"; // fallback
+    if (seaVal != null) {
+      oceanColor = getSeaColor(seaVal, minSea, maxSea);
+    }
+
+    try {
+      map.setPaintProperty("ocean-fill", "fill-color", oceanColor);
+    } catch (e) {
+      console.warn("Water layer not ready yet:", e);
+    }
   }
 }
 
+// Smooth interpolation helper
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+let yearAnimationId = null;
+
+function animateYear(oldYear, newYear, duration = 500) {
+  if (yearAnimationId) cancelAnimationFrame(yearAnimationId);
+  const start = performance.now();
+
+  function step(timestamp) {
+    const elapsed = timestamp - start;
+    let t = Math.min(elapsed / duration, 1);
+
+    const current = oldYear + (newYear - oldYear) * t;
+
+    // Only update the map if year changed (integer)
+    const displayYear = Math.round(current);
+    document.getElementById("yearLabel").textContent = displayYear;
+
+    updateMap(displayYear);
+    updateLegend(displayYear);
+
+    if (t < 1) {
+      yearAnimationId = requestAnimationFrame(step);
+    } else {
+      currentYear = newYear;
+      yearAnimationId = null;
+    }
+  }
+
+  yearAnimationId = requestAnimationFrame(step);
+}
 
 
 // Slider + Toggle Buttons
 function setupInteraction() {
   const yearSlider = document.getElementById("yearSlider");
-  const yearLabel = document.getElementById("yearLabel");
+  let sliderTimeout;
 
   yearSlider.oninput = e => {
-    currentYear = +e.target.value;
-    yearLabel.textContent = currentYear;
-    updateMap();
-    updateLegend();
+    // Clear previous timeout if user keeps dragging
+    clearTimeout(sliderTimeout);
+
+    sliderTimeout = setTimeout(() => {
+      const newYear = +e.target.value;          // parse value as number
+      if (!isNaN(newYear)) {                     // sanity check
+        animateYear(currentYear, newYear, 500); // pass old + new year
+      }
+    }, 150);
 
   };
 
   document.getElementById("modeTemp").onclick = () => {
     mode = "temp";
+    setActiveButton();
     updateMap();
     updateLegend();
 
@@ -241,6 +297,7 @@ function setupInteraction() {
 
   document.getElementById("modeSea").onclick = () => {
     mode = "sea";
+    setActiveButton();
     updateMap();
     updateLegend();
 
@@ -254,38 +311,55 @@ function setupTooltip() {
   const tooltip = document.getElementById("tooltip");
 
   map.on("mousemove", "climate-fill", e => {
+    const tooltip = document.getElementById("tooltip");
 
-        if (mode !== "temp") {
+    if (mode !== "temp") {
       tooltip.style.display = "none";
       return;
     }
 
     const f = e.features[0];
     const props = f.properties;
-    const name = props.Country || props.ADMIN || props.NAME || "Unknown";
+    const name = getCountryName(props)
 
     tooltip.style.display = "block";
-    tooltip.style.left = e.point.x + 15 + "px";
-    tooltip.style.top = e.point.y + 15 + "px";
-
     tooltip.innerHTML = `
-      <strong>${name}</strong><br>
-      Year: ${currentYear}<br>
-      Temp Anomaly:
-      <strong>${props.value != null ? props.value.toFixed(2) : "N/A"}</strong>
-    `;
-  });
+    <strong>${name}</strong><br>
+    Year: ${currentYear}<br>
+    Temp Anomaly: <strong>${props.value != null ? props.value.toFixed(2) : "N/A"}</strong>
+  `;
 
-  map.on("mouseleave", "climate-fill", () => {
-    tooltip.style.display = "none";
+    // Convert map coordinates to page coordinates
+    const canvas = map.getCanvas();
+    const canvasRect = canvas.getBoundingClientRect();
+
+    // e.point is relative to canvas
+    let x = canvasRect.left + e.point.x + 10;
+    let y = canvasRect.top + e.point.y + 10;
+
+    const tooltipRect = tooltip.getBoundingClientRect();
+
+    // Prevent tooltip from overflowing window edges
+    if (x + tooltipRect.width > window.innerWidth) {
+      x = canvasRect.left + e.point.x - tooltipRect.width - 10;
+    }
+    if (y + tooltipRect.height > window.innerHeight) {
+      y = canvasRect.top + e.point.y - tooltipRect.height - 10;
+    }
+
+    tooltip.style.left = `${x}px`;
+    tooltip.style.top = `${y}px`;
   });
+  // Hide tooltip when leaving map or layer
+  map.on("mouseleave", "climate-fill", () => tooltip.style.display = "none");
+  map.getCanvas().addEventListener("mouseleave", () => tooltip.style.display = "none");
 }
 
 
 //------------------------------------------
 // LEGEND RENDERING
 //------------------------------------------
-function updateLegend() {
+function updateLegend(year = currentYear) {
   const legend = document.getElementById("legend");
   legend.innerHTML = ""; // clear
 
@@ -345,4 +419,18 @@ function updateLegend() {
   legend.appendChild(title);
   legend.appendChild(bar);
   legend.appendChild(labels);
+}
+
+
+function setActiveButton() {
+  const tempBtn = document.getElementById("modeTemp");
+  const seaBtn = document.getElementById("modeSea");
+
+  if (mode === "temp") {
+    tempBtn.classList.add("active");
+    seaBtn.classList.remove("active");
+  } else {
+    seaBtn.classList.add("active");
+    tempBtn.classList.remove("active");
+  }
 }
