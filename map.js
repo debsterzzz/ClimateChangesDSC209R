@@ -1,3 +1,27 @@
+// Global Variables
+let worldGeom;       // geometry-only world countries
+let tempTable;       // temperature table (by ISO3)
+let tempByISO = {};  // lookup: ISO3 -> properties row
+let seaData;
+let seaByYear = {};
+let currentYear = 1992;
+let mode = "temp"; // "temp" | "sea" | "disaster"
+
+let disasterData;
+let disasterByISO = {};
+let disasterYears = new Set();
+
+// NEW: global series
+let globalTempByYear = {};       // year -> avg anomaly
+let globalDisastersByYear = {};  // year -> total disasters
+
+// We'll grab these from the slider later
+let sliderMinYear = 1992;
+let sliderMaxYear = 2010;
+
+let isPlaying = false;
+let playInterval = null;
+
 // Initialize MapLibre
 const map = new maplibregl.Map({
   container: "map",
@@ -6,22 +30,20 @@ const map = new maplibregl.Map({
   zoom: 1.3
 });
 
-// Global Variables
-let worldGeom;       // geometry-only world countries
-let tempTable;       // temperature table (by ISO3)
-let tempByISO = {};  // lookup: ISO3 -> properties row
-let seaData;
-let seaByYear = {};
-let currentYear = 1992;
-let mode = "temp"; // "temp" or "sea"
-
 // -----------------------------
 // COLOR SCALES
 // -----------------------------
+let TEMP_MIN = -0.5;  // tweak if needed
+let TEMP_MAX = 1.5;   // tweak if needed
+
 function getTempColor(v) {
-  // Temperature anomaly scale (-2 to +3°C)
-  const t = (v + 2) / 5;            // map [-2,3] -> [0,1]
-  return d3.interpolateYlOrRd(Math.max(0, Math.min(t, 1)));
+  if (v == null) return "#e0e0e0";
+
+  const t = (v - TEMP_MIN) / (TEMP_MAX - TEMP_MIN);
+  const tt = Math.max(0, Math.min(1, t));
+
+  // diverging: blue (cool) -> white -> red (warm)
+  return d3.interpolateRdYlBu(1 - tt);
 }
 
 function getSeaColor(v, minSea, maxSea) {
@@ -54,24 +76,36 @@ function getTempValue(props, year) {
 // LOAD DATA
 // -----------------------------
 Promise.all([
-  // 1) World geometry (your climate_world_joined.json is basically this)
+  // 1) World geometry
   fetch("data/climate_world_joined.json").then(r => r.json()),
 
-  // 2) Temperature table (geometry = null, but has ISO3 + year columns)
+  // 2) Temperature table (geojson)
   fetch("data/Indicator_3_1_Climate_Indicators_Annual_Mean_Global_Surface_Temperature_5943755526554557319.geojson")
     .then(r => r.json()),
 
   // 3) Sea-level data
   fetch("data/Indicator_3_3_melted_new_-7232464109204630623.geojson")
-    .then(r => r.json())
-]).then(([world, tempTableGeo, sea]) => {
+    .then(r => r.json()),
+
+  // 4) Disasters CSV (physical risks)
+  d3.csv("data/Indicator_11_1_Physical_Risks_Climate_related_disasters_frequency_7212563912390016675.csv")
+]).then(([world, tempTableGeo, sea, disasterCsv]) => {
   worldGeom = world;
   seaData = sea;
   tempTable = tempTableGeo;
+  disasterData = disasterCsv;
 
   console.log("World geom (climate source):", worldGeom);
   console.log("Temp table:", tempTable);
   console.log("Sea level data:", seaData);
+  console.log("Disaster frequency:", disasterData);
+
+  // Get slider range from DOM
+  const slider = document.getElementById("yearSlider");
+  if (slider) {
+    sliderMinYear = +slider.min;
+    sliderMaxYear = +slider.max;
+  }
 
   // Build ISO3 -> temp-row lookup from the temp table
   tempTable.features.forEach(f => {
@@ -80,10 +114,17 @@ Promise.all([
     if (iso) tempByISO[iso] = p;
   });
 
+  // Build ISO3 -> year -> disaster_count lookup + global totals
+  buildDisasterLookup(disasterData);
+
+  // Compute sea-level by year (global)
   processSeaLevels(seaData);
 
+  // Compute global avg temperature anomaly per year
+  computeGlobalTempSeries();
+
   map.on("load", () => {
-    // 1) CLIMATE SOURCE + LAYER (on top of ocean, below labels)
+    // CLIMATE SOURCE + LAYER
     map.addSource("climate", {
       type: "geojson",
       data: worldGeom
@@ -97,14 +138,14 @@ Promise.all([
         "fill-color": [
           "coalesce",
           ["get", "value_color"],
-          "#e0e0e0"          // light grey fallback if no data
+          "#e0e0e0"
         ],
         "fill-opacity": 0.75,
         "fill-outline-color": "#444"
       }
     });
 
-    // 2) OCEAN MASK SOURCE + LAYER (below climate)
+    // OCEAN MASK SOURCE + LAYER
     map.addSource("ocean-mask", {
       type: "geojson",
       data: "data/oceans.geojson"
@@ -118,18 +159,19 @@ Promise.all([
         "fill-color": "#aac6ff",
         "fill-opacity": 1.0
       }
-    }, "climate-fill");  // ocean drawn just under climate
+    }, "climate-fill");
 
-    // Kick everything off
     setupInteraction();
+    setActiveButton();
     updateLegend();
-    updateMap();
+    updateMap(currentYear);
+    updateSummary(currentYear);
   });
 });
 
-
-// Convert sea-level data to year → average value
-// ----------------------------
+// -----------------------------
+// Sea levels: year → avg value
+// -----------------------------
 function processSeaLevels(gdf) {
   const yearly = {};
 
@@ -155,11 +197,13 @@ function processSeaLevels(gdf) {
   console.log("Sea level (avg) by year:", seaByYear);
 }
 
+// -----------------------------
+// Country name helper
+// -----------------------------
 function getCountryName(props) {
   if (props.sovereignt) {
-    name = props.sovereignt
-  }
-  else {
+    name = props.sovereignt;
+  } else {
     name = (
       props.ADMIN ||
       props.ADMIN0_A3 ||
@@ -170,40 +214,143 @@ function getCountryName(props) {
       "Unknown"
     );
   }
-  return name
+  return name;
 }
 
-const featureValues = {};
+// -----------------------------
+// Disasters: build lookup + global totals
+// -----------------------------
+function buildDisasterLookup(rows) {
+  rows.forEach(row => {
+    const indicator = (row.Indicator || row.indicator || "").toString();
 
+    // Skip "Number of People Affected" rows completely
+    if (indicator.includes("People Affected")) return;
+
+    // Keep ONLY "Climate related disasters frequency, Number of Disasters: TOTAL"
+    if (
+      !indicator.includes("Number of Disasters") ||
+      !indicator.includes("TOTAL")
+    ) {
+      return;
+    }
+
+    const iso = (row.ISO3 || row.ISO || row.ADM0_A3 || "").trim();
+    if (!iso) return;
+
+    if (!disasterByISO[iso]) disasterByISO[iso] = {};
+
+    Object.keys(row).forEach(col => {
+      const y = parseInt(col, 10);
+      if (!Number.isNaN(y) && y >= 1900 && y <= 2100) {
+        const val = row[col];
+        if (val !== "" && val != null && !Number.isNaN(+val)) {
+          const numVal = +val;
+
+          // store per-country/year
+          disasterByISO[iso][y] = numVal;
+          disasterYears.add(y);
+
+          // accumulate global totals per year
+          if (!globalDisastersByYear[y]) globalDisastersByYear[y] = 0;
+          globalDisastersByYear[y] += numVal;
+        }
+      }
+    });
+  });
+
+  console.log(
+    "Disaster years found:",
+    Array.from(disasterYears).sort((a, b) => a - b)
+  );
+  console.log("Global disasters by year:", globalDisastersByYear);
+}
+
+function getDisasterColor(v, minVal, maxVal) {
+  if (v == null) return "#e0e0e0";
+  if (maxVal === minVal) return d3.interpolateReds(1); // avoid div by zero
+
+  const t = (v - minVal) / (maxVal - minVal);
+  const tt = Math.max(0, Math.min(1, t));
+  return d3.interpolateReds(tt);
+}
+
+// -----------------------------
+// Global temperature series
+// -----------------------------
+function computeGlobalTempSeries() {
+  const years = [];
+  for (let y = sliderMinYear; y <= sliderMaxYear; y++) {
+    years.push(y);
+  }
+
+  years.forEach(y => {
+    const vals = [];
+
+    Object.values(tempByISO).forEach(props => {
+      const v = getTempValue(props, y);
+      if (v != null) vals.push(v);
+    });
+
+    if (vals.length > 0) {
+      const sum = vals.reduce((a, b) => a + b, 0);
+      globalTempByYear[y] = sum / vals.length;
+    } else {
+      globalTempByYear[y] = null;
+    }
+  });
+
+  console.log("Global avg temp anomaly by year:", globalTempByYear);
+}
+
+// -----------------------------
+// MAP UPDATES
+// -----------------------------
 function updateMap(year = currentYear) {
   const src = map.getSource("climate");
   if (!src || !worldGeom) return;
 
-  // ----- LAND (temperature) -----
-  if (mode === "temp") {
+  // ----- LAND: TEMPERATURE OR DISASTERS -----
+  if (mode === "temp" || mode === "disaster") {
+    // Precompute disaster min/max for the chosen year (for legend + color scale)
+    let dMin = Infinity, dMax = -Infinity;
+    if (mode === "disaster") {
+      Object.values(disasterByISO).forEach(yearDict => {
+        if (yearDict[year] != null) {
+          const v = yearDict[year];
+          if (v < dMin) dMin = v;
+          if (v > dMax) dMax = v;
+        }
+      });
+      if (!isFinite(dMin) || !isFinite(dMax)) {
+        dMin = 0;
+        dMax = 1;
+      }
+    }
+
     const updated = {
       ...worldGeom,
       features: worldGeom.features.map(f => {
         const props = f.properties || {};
-
         const iso = (props.ISO3 || props.ISO_A3 || props.ADM0_A3 || props.adm0_a3 || props.SOV_A3 || props.sov_a3 || "").trim();
-        const tempRow = iso ? tempByISO[iso] : null;
-        const targetVal = tempRow ? getTempValue(tempRow, year) : null;
 
-        // Smooth interpolation
-        const prevVal = featureValues[iso]?.value ?? targetVal ?? 0;
-        const smoothVal = targetVal != null ? lerp(prevVal, targetVal, 0.2) : null;
+        let value = null;
+        let color = "#e0e0e0";
 
-        // Store the last drawn value
-        featureValues[iso] = { value: smoothVal };
-
-        const color = smoothVal != null ? getTempColor(smoothVal) : "#e0e0e0";
+        if (mode === "temp") {
+          const tempRow = iso ? tempByISO[iso] : null;
+          value = tempRow ? getTempValue(tempRow, year) : null;
+          color = value != null ? getTempColor(value) : "#e0e0e0";
+        } else if (mode === "disaster") {
+          value = iso && disasterByISO[iso] ? disasterByISO[iso][year] : null;
+          color = getDisasterColor(value, dMin, dMax);
+        }
 
         return {
           ...f,
           properties: {
             ...props,
-            value: smoothVal,
+            value,
             value_color: color
           }
         };
@@ -213,9 +360,9 @@ function updateMap(year = currentYear) {
     src.setData(updated);
   }
 
-  if (mode == "sea") {
-    // ----- OCEAN (sea level) -----
-    const seaVal = seaByYear[currentYear];
+  // ----- OCEAN: SEA LEVEL -----
+  if (mode === "sea") {
+    const seaVal = seaByYear[year];  // use the year argument
     const allVals = Object.values(seaByYear);
     const minSea = Math.min(...allVals);
     const maxSea = Math.max(...allVals);
@@ -233,132 +380,181 @@ function updateMap(year = currentYear) {
   }
 }
 
-// Smooth interpolation helper
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+
+
+function startPlayback() {
+  if (isPlaying) return; // already playing
+
+  const playBtn = document.getElementById("playPause");
+  const yearSlider = document.getElementById("yearSlider");
+  if (!playBtn || !yearSlider) return;
+
+  isPlaying = true;
+  playBtn.textContent = "Pause";
+
+  playInterval = setInterval(() => {
+    let nextYear = currentYear + 1;
+
+    // Wrap back to start when we pass the max year
+    if (nextYear > sliderMaxYear) {
+      nextYear = sliderMinYear;
+    }
+
+    currentYear = nextYear;
+    yearSlider.value = String(currentYear);
+    document.getElementById("yearLabel").textContent = currentYear;
+
+    updateMap(currentYear);
+    updateLegend(currentYear);
+    updateSummary(currentYear);
+  }, 2500); // ms per year – tweak for speed if you want
 }
 
-let yearAnimationId = null;
+function stopPlayback() {
+  if (!isPlaying) return;
 
-function animateYear(oldYear, newYear, duration = 500) {
-  if (yearAnimationId) cancelAnimationFrame(yearAnimationId);
-  const start = performance.now();
-
-  function step(timestamp) {
-    const elapsed = timestamp - start;
-    let t = Math.min(elapsed / duration, 1);
-
-    const current = oldYear + (newYear - oldYear) * t;
-
-    // Only update the map if year changed (integer)
-    const displayYear = Math.round(current);
-    document.getElementById("yearLabel").textContent = displayYear;
-
-    updateMap(displayYear);
-    updateLegend(displayYear);
-
-    if (t < 1) {
-      yearAnimationId = requestAnimationFrame(step);
-    } else {
-      currentYear = newYear;
-      yearAnimationId = null;
-    }
+  isPlaying = false;
+  const playBtn = document.getElementById("playPause");
+  if (playBtn) {
+    playBtn.textContent = "Play";
   }
 
-  yearAnimationId = requestAnimationFrame(step);
+  if (playInterval) {
+    clearInterval(playInterval);
+    playInterval = null;
+  }
 }
 
 
-// Slider + Toggle Buttons
+// -----------------------------
+// SLIDER + BUTTONS + TOOLTIP
+// -----------------------------
 function setupInteraction() {
   const yearSlider = document.getElementById("yearSlider");
   let sliderTimeout;
 
+  // Make sure we have up-to-date min/max from the slider
+  sliderMinYear = +yearSlider.min;
+  sliderMaxYear = +yearSlider.max;
+
   yearSlider.oninput = e => {
-    // Clear previous timeout if user keeps dragging
+    // If the user moves the slider while it's playing, pause
+    if (isPlaying) {
+      stopPlayback();
+    }
+
     clearTimeout(sliderTimeout);
 
     sliderTimeout = setTimeout(() => {
-      const newYear = +e.target.value;          // parse value as number
-      if (!isNaN(newYear)) {                     // sanity check
-        animateYear(currentYear, newYear, 500); // pass old + new year
+      const newYear = +e.target.value;
+      if (!isNaN(newYear)) {
+        currentYear = newYear;
+        document.getElementById("yearLabel").textContent = newYear;
+        updateMap(newYear);
+        updateLegend(newYear);
+        updateSummary(newYear);
       }
-    }, 150);
-
+    }, 100);
   };
 
   document.getElementById("modeTemp").onclick = () => {
     mode = "temp";
     setActiveButton();
-    updateMap();
-    updateLegend();
-
+    updateMap(currentYear);
+    updateLegend(currentYear);
+    updateSummary(currentYear);
   };
 
   document.getElementById("modeSea").onclick = () => {
     mode = "sea";
     setActiveButton();
-    updateMap();
-    updateLegend();
-
+    updateMap(currentYear);
+    updateLegend(currentYear);
+    updateSummary(currentYear);
   };
+
+  document.getElementById("modeDisaster").onclick = () => {
+    mode = "disaster";
+    setActiveButton();
+    updateMap(currentYear);
+    updateLegend(currentYear);
+    updateSummary(currentYear);
+  };
+
+  // Hook up Play / Pause button
+  const playBtn = document.getElementById("playPause");
+  if (playBtn) {
+    playBtn.onclick = () => {
+      if (isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
+    };
+  }
 
   setupTooltip();
 }
 
-// Tooltip on Hover
+
 function setupTooltip() {
   const tooltip = document.getElementById("tooltip");
 
   map.on("mousemove", "climate-fill", e => {
-    const tooltip = document.getElementById("tooltip");
-
-    if (mode !== "temp") {
+    if (mode !== "temp" && mode !== "disaster") {
       tooltip.style.display = "none";
       return;
     }
 
     const f = e.features[0];
     const props = f.properties;
-    const name = getCountryName(props)
+    const name = getCountryName(props);
+
+    let valueLabel;
+    if (mode === "temp") {
+      valueLabel = props.value != null ? `${props.value.toFixed(2)}°C` : "N/A";
+    } else if (mode === "disaster") {
+      valueLabel = props.value != null ? props.value.toString() : "N/A";
+    }
 
     tooltip.style.display = "block";
     tooltip.innerHTML = `
-    <strong>${name}</strong><br>
-    Year: ${currentYear}<br>
-    Temp Anomaly: <strong>${props.value != null ? props.value.toFixed(2) : "N/A"}</strong>
-  `;
+      <div class="tooltip-title">${name}</div>
+      <div class="tooltip-line">Year: <strong>${currentYear}</strong></div>
+      <div class="tooltip-line">
+        ${mode === "temp" ? "Temp Anomaly" : "Disasters"}:
+        <strong>${valueLabel}</strong>
+      </div>
+    `;
 
-    // Convert map coordinates to page coordinates
-    const canvas = map.getCanvas();
-    const canvasRect = canvas.getBoundingClientRect();
-
-    // e.point is relative to canvas
-    let x = canvasRect.left + e.point.x + 10;
-    let y = canvasRect.top + e.point.y + 10;
+    const evt = e.originalEvent;
+    let x = evt.clientX + 12;
+    let y = evt.clientY + 12;
 
     const tooltipRect = tooltip.getBoundingClientRect();
 
-    // Prevent tooltip from overflowing window edges
     if (x + tooltipRect.width > window.innerWidth) {
-      x = canvasRect.left + e.point.x - tooltipRect.width - 10;
+      x = evt.clientX - tooltipRect.width - 12;
     }
     if (y + tooltipRect.height > window.innerHeight) {
-      y = canvasRect.top + e.point.y - tooltipRect.height - 10;
+      y = evt.clientY - tooltipRect.height - 12;
     }
 
     tooltip.style.left = `${x}px`;
     tooltip.style.top = `${y}px`;
   });
-  // Hide tooltip when leaving map or layer
-  map.on("mouseleave", "climate-fill", () => tooltip.style.display = "none");
-  map.getCanvas().addEventListener("mouseleave", () => tooltip.style.display = "none");
+
+  map.on("mouseleave", "climate-fill", () => {
+    tooltip.style.display = "none";
+  });
+  map.getCanvas().addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
+  });
 }
 
-
-//------------------------------------------
-// LEGEND RENDERING
-//------------------------------------------
+// -----------------------------
+// LEGEND
+// -----------------------------
 function updateLegend(year = currentYear) {
   const legend = document.getElementById("legend");
   legend.innerHTML = ""; // clear
@@ -379,21 +575,20 @@ function updateLegend(year = currentYear) {
 
     bar.style.background = `
       linear-gradient(to right,
-        ${d3.interpolateYlOrRd(0)}, 
-        ${d3.interpolateYlOrRd(0.25)}, 
-        ${d3.interpolateYlOrRd(0.5)},
-        ${d3.interpolateYlOrRd(0.75)},
-        ${d3.interpolateYlOrRd(1)})
+        ${d3.interpolateRdYlBu(1)},
+        ${d3.interpolateRdYlBu(0.75)},
+        ${d3.interpolateRdYlBu(0.5)},
+        ${d3.interpolateRdYlBu(0.25)},
+        ${d3.interpolateRdYlBu(0)}
+      )
     `;
 
-    minLabel = "-2°C";
-    maxLabel = "+3°C";
+    minLabel = `${TEMP_MIN.toFixed(1)}°C`;
+    maxLabel = `${TEMP_MAX.toFixed(1)}°C`;
   }
-
   else if (mode === "sea") {
     title.textContent = "Global Sea Level (mm)";
 
-    // Get sea-level range dynamically
     const vals = Object.values(seaByYear);
     const minSea = Math.min(...vals);
     const maxSea = Math.max(...vals);
@@ -410,6 +605,35 @@ function updateLegend(year = currentYear) {
     minLabel = `${minSea.toFixed(0)} mm`;
     maxLabel = `${maxSea.toFixed(0)} mm`;
   }
+  else if (mode === "disaster") {
+    title.textContent = "Number of Climate-Related Disasters (per country)";
+
+    bar.style.background = `
+      linear-gradient(to right,
+        ${d3.interpolateReds(0)},
+        ${d3.interpolateReds(0.25)},
+        ${d3.interpolateReds(0.5)},
+        ${d3.interpolateReds(0.75)},
+        ${d3.interpolateReds(1)})
+    `;
+
+    // Use min/max for this year for labels (approx)
+    let dMin = Infinity, dMax = -Infinity;
+    Object.values(disasterByISO).forEach(yearDict => {
+      if (yearDict[year] != null) {
+        const v = yearDict[year];
+        if (v < dMin) dMin = v;
+        if (v > dMax) dMax = v;
+      }
+    });
+    if (!isFinite(dMin) || !isFinite(dMax)) {
+      dMin = 0;
+      dMax = 1;
+    }
+
+    minLabel = `${dMin.toFixed(0)}`;
+    maxLabel = `${dMax.toFixed(0)}`;
+  }
 
   labels.innerHTML = `
     <span>${minLabel}</span>
@@ -421,16 +645,46 @@ function updateLegend(year = currentYear) {
   legend.appendChild(labels);
 }
 
-
+// -----------------------------
+// ACTIVE BUTTON STATE
+// -----------------------------
 function setActiveButton() {
   const tempBtn = document.getElementById("modeTemp");
   const seaBtn = document.getElementById("modeSea");
+  const disBtn = document.getElementById("modeDisaster");
 
-  if (mode === "temp") {
-    tempBtn.classList.add("active");
-    seaBtn.classList.remove("active");
-  } else {
-    seaBtn.classList.add("active");
-    tempBtn.classList.remove("active");
-  }
+  tempBtn.classList.remove("active");
+  seaBtn.classList.remove("active");
+  disBtn.classList.remove("active");
+
+  if (mode === "temp") tempBtn.classList.add("active");
+  else if (mode === "sea") seaBtn.classList.add("active");
+  else if (mode === "disaster") disBtn.classList.add("active");
+}
+
+// -----------------------------
+// NEW: Global snapshot panel
+// -----------------------------
+function updateSummary(year = currentYear) {
+  const tempEl = document.getElementById("summary-temp");
+  const seaEl = document.getElementById("summary-sea");
+  const disEl = document.getElementById("summary-disasters");
+  const yearEl = document.getElementById("summary-year");
+
+  if (!tempEl || !seaEl || !disEl || !yearEl) return;
+
+  yearEl.textContent = year;
+
+  const tempVal = globalTempByYear[year];
+  const seaVal = seaByYear[year];
+  const disVal = globalDisastersByYear[year];
+
+  tempEl.textContent =
+    tempVal != null ? `${tempVal.toFixed(2)} °C` : "No data";
+
+  seaEl.textContent =
+    seaVal != null ? `${seaVal.toFixed(0)} mm` : "No data";
+
+  disEl.textContent =
+    disVal != null ? disVal.toString() : "No data";
 }
