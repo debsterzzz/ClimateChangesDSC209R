@@ -11,11 +11,9 @@ let disasterData;
 let disasterByISO = {};
 let disasterYears = new Set();
 
-// NEW: global series
 let globalTempByYear = {};       // year -> avg anomaly
 let globalDisastersByYear = {};  // year -> total disasters
 
-// We'll grab these from the slider later
 let sliderMinYear = 1992;
 let sliderMaxYear = 2010;
 
@@ -27,7 +25,8 @@ const map = new maplibregl.Map({
   container: "map",
   style: "data/style.json",
   center: [0, 20],
-  zoom: 1.3
+  zoom: 1.6,
+  renderWorldCopies: false
 });
 
 // -----------------------------
@@ -167,6 +166,35 @@ Promise.all([
     updateMap(currentYear);
     updateSummary(currentYear);
   });
+
+  const years = d3.range(sliderMinYear, sliderMaxYear + 1);
+
+  // === GLOBAL SPARKLINE ===
+  const globalData = years.map(y => {
+    if (mode === "temp") return { year: y, value: globalTempByYear[y] ?? null };
+    if (mode === "disaster") return { year: y, value: globalDisastersByYear[y] ?? null };
+  }).filter(d => d.value != null);
+
+  const yScaleGlobal = d3.scaleLinear()
+    .domain([d3.min(globalData, d => d.value), d3.max(globalData, d => d.value)])
+    .range([60, 0]);
+  const xScale = d3.scaleLinear()
+    .domain(d3.extent(years)) // or [sliderMinYear, sliderMaxYear]
+    .range([0, 300]); // adjust width as needed
+
+  const lineGlobal = d3.line()
+    .x(d => xScale(d.year))
+    .y(d => yScaleGlobal(d.value))
+    .curve(d3.curveMonotoneX);
+
+  d3.select("#globalSparkline").selectAll("*").remove();
+  d3.select("#globalSparkline")
+    .append("path")
+    .datum(globalData)
+    .attr("fill", "none")
+    .attr("stroke", "#e63946")
+    .attr("stroke-width", 2)
+    .attr("d", lineGlobal);
 });
 
 // -----------------------------
@@ -380,22 +408,22 @@ function updateMap(year = currentYear) {
   }
 }
 
-
-
 function startPlayback() {
-  if (isPlaying) return; // already playing
+  if (isPlaying) return;
 
-  const playBtn = document.getElementById("playPause");
+  const playBtnIcon = document.getElementById("playPauseIcon");
   const yearSlider = document.getElementById("yearSlider");
-  if (!playBtn || !yearSlider) return;
+  if (!playBtnIcon || !yearSlider) return;
 
   isPlaying = true;
-  playBtn.textContent = "Pause";
+
+  // Switch to pause icon
+  playBtnIcon.classList.remove("icon-play");
+  playBtnIcon.classList.add("icon-pause");
 
   playInterval = setInterval(() => {
     let nextYear = currentYear + 1;
 
-    // Wrap back to start when we pass the max year
     if (nextYear > sliderMaxYear) {
       nextYear = sliderMinYear;
     }
@@ -407,16 +435,19 @@ function startPlayback() {
     updateMap(currentYear);
     updateLegend(currentYear);
     updateSummary(currentYear);
-  }, 2500); // ms per year – tweak for speed if you want
+  }, 2500);
 }
 
 function stopPlayback() {
   if (!isPlaying) return;
 
   isPlaying = false;
-  const playBtn = document.getElementById("playPause");
-  if (playBtn) {
-    playBtn.textContent = "Play";
+
+  const playBtnIcon = document.getElementById("playPauseIcon");
+  if (playBtnIcon) {
+    // Switch to play icon
+    playBtnIcon.classList.remove("icon-pause");
+    playBtnIcon.classList.add("icon-play");
   }
 
   if (playInterval) {
@@ -463,6 +494,7 @@ function setupInteraction() {
     updateMap(currentYear);
     updateLegend(currentYear);
     updateSummary(currentYear);
+    updateGlobalSparkline();
   };
 
   document.getElementById("modeSea").onclick = () => {
@@ -471,6 +503,7 @@ function setupInteraction() {
     updateMap(currentYear);
     updateLegend(currentYear);
     updateSummary(currentYear);
+    updateGlobalSparkline();
   };
 
   document.getElementById("modeDisaster").onclick = () => {
@@ -479,6 +512,7 @@ function setupInteraction() {
     updateMap(currentYear);
     updateLegend(currentYear);
     updateSummary(currentYear);
+    updateGlobalSparkline();
   };
 
   // Hook up Play / Pause button
@@ -499,58 +533,68 @@ function setupInteraction() {
 
 function setupTooltip() {
   const tooltip = document.getElementById("tooltip");
+  const offset = 12;
 
-  map.on("mousemove", "climate-fill", e => {
-    if (mode !== "temp" && mode !== "disaster") {
+  map.on("mousemove", e => {
+    // Keep feature detection as-is
+    const canvasRect = map.getCanvas().getBoundingClientRect();
+    const xCanvas = e.originalEvent.clientX - canvasRect.left;
+    const yCanvas = e.originalEvent.clientY - canvasRect.top;
+
+    const features = map.queryRenderedFeatures([xCanvas, yCanvas], { layers: ["climate-fill"] });
+    if (!features.length) {
       tooltip.style.display = "none";
       return;
     }
 
-    const f = e.features[0];
+    const f = features[0];
     const props = f.properties;
+    const iso = props.ISO3 || props.ISO_A3 || props.ADM0_A3 || props.adm0_a3 || props.SOV_A3 || "";
     const name = getCountryName(props);
 
     let valueLabel;
     if (mode === "temp") {
       valueLabel = props.value != null ? `${props.value.toFixed(2)}°C` : "N/A";
-    } else if (mode === "disaster") {
-      valueLabel = props.value != null ? props.value.toString() : "N/A";
+    } else {
+      valueLabel = props.value != null ? props.value : "N/A";
     }
 
     tooltip.style.display = "block";
     tooltip.innerHTML = `
-      <div class="tooltip-title">${name}</div>
-      <div class="tooltip-line">Year: <strong>${currentYear}</strong></div>
-      <div class="tooltip-line">
-        ${mode === "temp" ? "Temp Anomaly" : "Disasters"}:
-        <strong>${valueLabel}</strong>
-      </div>
+        <div><strong>${name}</strong></div>
+        <div>Year: <strong>${currentYear}</strong></div>
+        <div>${mode === "temp" ? "Temp" : "Disasters"}: <strong>${valueLabel}</strong></div>
     `;
 
-    const evt = e.originalEvent;
-    let x = evt.clientX + 12;
-    let y = evt.clientY + 12;
+    let xTooltip = e.originalEvent.clientX + offset;
+    let yTooltip = e.originalEvent.clientY - canvasRect.top + offset;
 
     const tooltipRect = tooltip.getBoundingClientRect();
 
-    if (x + tooltipRect.width > window.innerWidth) {
-      x = evt.clientX - tooltipRect.width - 12;
+    if (xTooltip + tooltipRect.width > window.innerWidth) {
+      xTooltip = e.originalEvent.clientX - tooltipRect.width - offset;
     }
-    if (y + tooltipRect.height > window.innerHeight) {
-      y = evt.clientY - tooltipRect.height - 12;
+    if (yTooltip + tooltipRect.height > window.innerHeight) {
+      yTooltip = window.innerHeight - tooltipRect.height - offset;
     }
 
-    tooltip.style.left = `${x}px`;
-    tooltip.style.top = `${y}px`;
+    tooltip.style.left = `${xTooltip}px`;
+    tooltip.style.top = `${yTooltip}px`;
+
+    updateCountrySparkline(iso, name);
   });
 
   map.on("mouseleave", "climate-fill", () => {
     tooltip.style.display = "none";
+    updateCountrySparkline();
   });
+
   map.getCanvas().addEventListener("mouseleave", () => {
     tooltip.style.display = "none";
+    updateCountrySparkline();
   });
 }
+
 
 // -----------------------------
 // LEGEND
@@ -687,4 +731,84 @@ function updateSummary(year = currentYear) {
 
   disEl.textContent =
     disVal != null ? disVal.toString() : "No data";
+}
+
+function updateGlobalSparkline() {
+  const years = d3.range(sliderMinYear, sliderMaxYear + 1);
+  const xScale = d3.scaleLinear().domain(d3.extent(years)).range([0, 300]);
+
+  const globalData = years.map(y => {
+    if (mode === "temp") return { year: y, value: globalTempByYear[y] ?? null };
+    if (mode === "disaster") return { year: y, value: globalDisastersByYear[y] ?? null };
+  }).filter(d => d.value != null);
+
+  if (globalData.length === 0) return;
+
+  const yScaleGlobal = d3.scaleLinear()
+    .domain([d3.min(globalData, d => d.value), d3.max(globalData, d => d.value)])
+    .range([60, 0]);
+
+  const lineGlobal = d3.line()
+    .x(d => xScale(d.year))
+    .y(d => yScaleGlobal(d.value))
+    .curve(d3.curveMonotoneX);
+
+  const svg = d3.select("#globalSparkline");
+  svg.selectAll("*").remove();
+  svg.append("path")
+    .datum(globalData)
+    .attr("fill", "none")
+    .attr("stroke", mode === "temp" ? "#e63946" : "#d62728")
+    .attr("stroke-width", 2)
+    .attr("d", lineGlobal);
+}
+
+function updateCountrySparkline(iso, name) {
+  const countryContainer = document.getElementById("countrySparklineContainer");
+  const countryTitle = document.getElementById("countrySparklineTitle");
+  const svg = d3.select("#countrySparkline");
+
+  if (!iso || iso === "") {
+    svg.selectAll("*").remove();
+    countryContainer.style.display = "none";
+    return;
+  }
+
+  const years = d3.range(sliderMinYear, sliderMaxYear + 1);
+  const xScale = d3.scaleLinear().domain(d3.extent(years)).range([0, 300]);
+
+  const countryData = years.map(y => {
+    if (mode === "temp") {
+      const tempRow = tempByISO[iso];
+      return { year: y, value: tempRow ? getTempValue(tempRow, y) : null };
+    } else if (mode === "disaster") {
+      return { year: y, value: disasterByISO[iso] ? disasterByISO[iso][y] ?? null : null };
+    }
+  }).filter(d => d.value != null);
+
+  if (countryData.length === 0) {
+    svg.selectAll("*").remove();
+    countryContainer.style.display = "none";
+    return;
+  }
+
+  countryContainer.style.display = "block";
+  countryTitle.textContent = `${name} Trend`;
+
+  const yScaleCountry = d3.scaleLinear()
+    .domain([d3.min(countryData, d => d.value), d3.max(countryData, d => d.value)])
+    .range([60, 0]);
+
+  const lineCountry = d3.line()
+    .x(d => xScale(d.year))
+    .y(d => yScaleCountry(d.value))
+    .curve(d3.curveMonotoneX);
+
+  svg.selectAll("*").remove();
+  svg.append("path")
+    .datum(countryData)
+    .attr("fill", "none")
+    .attr("stroke", "#457b9d")
+    .attr("stroke-width", 2)
+    .attr("d", lineCountry);
 }

@@ -1,14 +1,48 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <meta charset="utf-8" />
+  <meta charset="utf-8" />
   <title>Climate Indicators Map</title>
 
+  <div class="story-section" id="intro">
+    <h1 class="title">How Our Planet Changed from 1992 to 2010</h1>
+
+    <p class="subtitle">
+      Climate change is a global phenomenon, but its impacts do not unfold
+      evenly across the world. This explorable explanation lets you uncover
+      how temperature anomalies, sea levels, and climate-related disasters
+      evolved over two decades — revealing patterns that are invisible in
+      traditional static charts.
+    </p>
+
+    <p class="story-hook">
+      <strong>How fast did the planet change in just 20 years?</strong>
+    </p>
+  </div>
+
+  <div class="story-section" id="howto">
+    <h2>How to Explore the Map</h2>
+
+    <ul class="howto-list">
+      <li>Use the <strong>year slider</strong> to move through time.</li>
+      <li>Press <strong>Play</strong> to animate the years automatically.</li>
+      <li>Switch between <strong>Temperature</strong>, <strong>Sea Level</strong>,
+        and <strong>Disasters</strong> using the mode buttons.</li>
+      <li>Hover over any country to see exact values.</li>
+      <li>The <strong>Global Snapshot Panel</strong> summarizes
+        worldwide conditions for the selected year.</li>
+    </ul>
+
+    <p class="howto-note">
+      Each mode reveals a different aspect of climate change — use them
+      together to uncover the full picture.
+    </p>
+  </div>
+
+
   <!-- MapLibre CSS -->
-  <link
-    href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css"
-    rel="stylesheet"
-  />
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
 
   <!-- Your stylesheet -->
   <link rel="stylesheet" href="style.css" />
@@ -17,45 +51,65 @@
 <body>
 
   <h2>Climate Indicators — Interactive World Map</h2>
-  
+
   <div id="controls">
-  <label for="yearSlider">Year: <span id="yearLabel">1992</span></label>
-  <input id="yearSlider" type="range" min="1992" max="2010" step="1" value="1992">
+    <label for="yearSlider">Year: <span id="yearLabel">1992</span></label>
+    <input id="yearSlider" type="range" min="1992" max="2010" step="1" value="1992">
 
-  <!-- Play / Pause button -->
-  <button id="playPause">Play</button>
+    <button id="playPause" class="icon-btn">
+      <span id="playPauseIcon" class="icon-play"></span>
+    </button>
 
-  <button id="modeTemp">Temperature</button>
-  <button id="modeSea">Sea Level</button>
-  <button id="modeDisaster">Disasters</button>
+
+    <button id="modeTemp">Temperature</button>
+    <button id="modeSea">Sea Level</button>
+    <button id="modeDisaster">Disasters</button>
   </div>
 
-  <div id="map"></div>
-  <div id="tooltip"></div>
-  <div id="legend"></div>
+  <div id="mapContainer">
+    <div id="map"></div>
+    <div id="tooltip"></div>
+    
+    <div id="rightPanels">
+      <div id="summaryPanel">
+        <h3>Global snapshot for <span id="summary-year">1992</span></h3>
+        <p class="summary-subtitle">
+          A quick view of how the planet looked in the selected year.
+        </p>
 
-  <!-- NEW: Global snapshot panel -->
-  <div id="summaryPanel">
-    <h3>Global snapshot for <span id="summary-year">1992</span></h3>
-    <p class="summary-subtitle">
-      A quick view of how the planet looked in the selected year.
-    </p>
+        <div class="summary-row">
+          <div class="summary-label">Avg temperature anomaly</div>
+          <div class="summary-value" id="summary-temp">–</div>
+        </div>
 
-    <div class="summary-row">
-      <div class="summary-label">Avg temperature anomaly</div>
-      <div class="summary-value" id="summary-temp">–</div>
+        <div class="summary-row">
+          <div class="summary-label">Avg sea level</div>
+          <div class="summary-value" id="summary-sea">–</div>
+        </div>
+
+        <div class="summary-row">
+          <div class="summary-label">Total climate disasters</div>
+          <div class="summary-value" id="summary-disasters">–</div>
+        </div>
+      </div>
+
+      <div id="legend"></div>
+
+      <!-- Sparkline panel -->
+      <div id="sparklinePanel">
+        <h4>Global Temperature Anomaly Trend</h4>
+        <svg id="globalSparkline" width="300" height="60"></svg>
+
+        <div id="countrySparklineContainer" style="display:none; margin-top:10px;">
+          <h4 id="countrySparklineTitle">Country Trend</h4>
+          <svg id="countrySparkline" width="300" height="60"></svg>
+        </div>
+      </div>
+
     </div>
 
-    <div class="summary-row">
-      <div class="summary-label">Avg sea level</div>
-      <div class="summary-value" id="summary-sea">–</div>
-    </div>
-
-    <div class="summary-row">
-      <div class="summary-label">Total climate disasters</div>
-      <div class="summary-value" id="summary-disasters">–</div>
-    </div>
   </div>
+
 
   <!-- MapLibre JS -->
   <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
@@ -68,4 +122,5 @@
   <script src="map.js"></script>
 
 </body>
+
 </html>
