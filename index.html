@@ -9,15 +9,19 @@
     <h1 class="title">How Our Planet Changed from 1992 to 2010</h1>
 
     <p class="subtitle">
-      Climate change is a global phenomenon, but its impacts do not unfold
-      evenly across the world. This explorable explanation lets you uncover
-      how temperature anomalies, sea levels, and climate-related disasters
-      evolved over two decades — revealing patterns that are invisible in
-      traditional static charts.
+      In less than one generation, the planet warmed faster than at any point in recorded history.
+      Global averages make this story feel distant &mdash; but the real impact depends on where you live.
+      This explorable explanation lets you uncover how temperature anomalies, sea levels, and climate-related
+      disasters evolved over two decades.
     </p>
 
     <p class="story-hook">
-      <strong>How fast did the planet change in just 20 years?</strong>
+      <strong>What changed in the world between 1992 and 2010 &mdash; and what happened in <em>your</em> country?</strong>
+    </p>
+    <p class="howto-note">
+      The world as a whole is warming, seas are rising, and disasters are becoming more frequent. <br />
+      Global averages can hide what’s happening in specific regions. <br />
+      Use the map and country search to compare the global story with the place you care about most.
     </p>
   </div>
 
@@ -30,16 +34,12 @@
       <li>Switch between <strong>Temperature</strong>, <strong>Sea Level</strong>,
         and <strong>Disasters</strong> using the mode buttons.</li>
       <li>Hover over any country to see exact values.</li>
-      <li>The <strong>Global Snapshot Panel</strong> summarizes
-        worldwide conditions for the selected year.</li>
+      <li>Use the <strong>country search</strong> to zoom into your home country and see its climate story.</li>
+      <li>The <strong>Global Snapshot Panel</strong> summarizes worldwide conditions for the selected year.</li>
     </ul>
 
-    <p class="howto-note">
-      Each mode reveals a different aspect of climate change — use them
-      together to uncover the full picture.
-    </p>
+    
   </div>
-
 
   <!-- MapLibre CSS -->
   <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -60,16 +60,26 @@
       <span id="playPauseIcon" class="icon-play"></span>
     </button>
 
-
     <button id="modeTemp">Temperature</button>
     <button id="modeSea">Sea Level</button>
     <button id="modeDisaster">Disasters</button>
+
+    <!-- NEW: country search -->
+    <div id="countrySearchContainer">
+  <span class="search-label">See your country's climate story:</span>
+  <input
+    type="text"
+    id="countrySearch"
+    placeholder="e.g. United States, Brazil, India" />
+  <button id="countrySearchBtn">Go</button>
+</div>
+
   </div>
 
   <div id="mapContainer">
     <div id="map"></div>
     <div id="tooltip"></div>
-    
+
     <div id="rightPanels">
       <div id="summaryPanel">
         <h3>Global snapshot for <span id="summary-year">1992</span></h3>
@@ -98,11 +108,13 @@
       <!-- Sparkline panel -->
       <div id="sparklinePanel">
         <h4>Global Temperature Anomaly Trend</h4>
-        <svg id="globalSparkline" width="300" height="60"></svg>
+        <svg id="globalSparkline" width="300" height="120"></svg>
 
         <div id="countrySparklineContainer" style="display:none; margin-top:10px;">
-          <h4 id="countrySparklineTitle">Country Trend</h4>
-          <svg id="countrySparkline" width="300" height="60"></svg>
+          <h4 id="countrySparklineTitle">Your Country's Climate Story</h4>
+          <svg id="countryTempSparkline" width="300" height="120"></svg>
+          <svg id="countryDisasterSparkline" width="300" height="120"></svg>
+          <div id="countryStats"></div>
         </div>
       </div>
 
@@ -110,6 +122,19 @@
 
   </div>
 
+  <!-- Takeaway section -->
+  <div class="story-section" id="takeaway">
+    <h2>What Should You Take Away?</h2>
+    <p>
+      Together, the global map and the country search show that climate change is both a planetary story and a local one.
+      Many countries move from mild anomalies to persistent warming, while climate-related disasters become more common over time.
+      If your country’s lines trend upward, it means that the abstract idea of “global warming” is already visible in your own backyard.
+    </p>
+    <p>
+      The goal of this visualization is not just to show rising numbers, but to help you connect global trends to a place you know.
+      When the global patterns and your country’s story line up, it becomes harder to dismiss climate change as something happening “somewhere else.”
+    </p>
+  </div>
 
   <!-- MapLibre JS -->
   <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>

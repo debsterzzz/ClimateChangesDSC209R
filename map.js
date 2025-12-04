@@ -20,6 +20,9 @@ let sliderMaxYear = 2010;
 let isPlaying = false;
 let playInterval = null;
 
+// NEW: lookup for country search (name/ISO -> { iso, bbox, displayName })
+let countryLookup = {};
+
 // Initialize MapLibre
 const map = new maplibregl.Map({
   container: "map",
@@ -69,6 +72,91 @@ function getTempValue(props, year) {
     }
   }
   return null;
+}
+
+// -----------------------------
+// Helper: compute bbox for a feature geometry
+// -----------------------------
+function computeFeatureBBox(geometry) {
+  if (!geometry) return null;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  function processCoords(coords) {
+    coords.forEach(c => {
+      if (Array.isArray(c[0])) {
+        processCoords(c);
+      } else {
+        const [x, y] = c;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    });
+  }
+
+  if (geometry.type === "Polygon" || geometry.type === "MultiPolygon") {
+    processCoords(geometry.coordinates);
+  }
+
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    return null;
+  }
+  return [[minX, minY], [maxX, maxY]];
+}
+
+// -----------------------------
+// Helper: build lookup for country search
+// -----------------------------
+function buildCountryLookup() {
+  if (!worldGeom || !worldGeom.features) return;
+
+  countryLookup = {};
+
+  worldGeom.features.forEach(f => {
+    const props = f.properties || {};
+    const iso = (
+      props.ISO3 ||
+      props.ISO_A3 ||
+      props.ADM0_A3 ||
+      props.adm0_a3 ||
+      props.SOV_A3 ||
+      props.sov_a3 ||
+      ""
+    ).trim();
+
+    const name = getCountryName(props);
+    const bbox = computeFeatureBBox(f.geometry);
+    const names = [name, props.ADMIN, props.sovereignt, iso];
+
+    names.forEach(n => {
+      if (!n) return;
+      const key = n.toLowerCase();
+      if (!countryLookup[key]) {
+        countryLookup[key] = { iso, bbox, displayName: name };
+      }
+    });
+  });
+}
+
+// -----------------------------
+// Helper: filter expression for highlight layer
+// -----------------------------
+function highlightFilterForISO(iso) {
+  return [
+    "==",
+    [
+      "coalesce",
+      ["get", "ISO3"],
+      ["get", "ISO_A3"],
+      ["get", "ADM0_A3"],
+      ["get", "adm0_a3"],
+      ["get", "SOV_A3"],
+      ["get", "sov_a3"]
+    ],
+    iso || ""
+  ];
 }
 
 // -----------------------------
@@ -160,7 +248,23 @@ Promise.all([
       }
     }, "climate-fill");
 
+    // NEW: highlight outline layer
+    map.addLayer({
+      id: "country-highlight",
+      type: "line",
+      source: "climate",
+      paint: {
+        "line-color": "#ffcc00",
+        "line-width": 2
+      },
+      filter: highlightFilterForISO("")
+    });
+
+    // Build lookup now that worldGeom is ready
+    buildCountryLookup();
+
     setupInteraction();
+    setupCountrySearch();
     setActiveButton();
     updateLegend();
     updateMap(currentYear);
@@ -170,31 +274,9 @@ Promise.all([
   const years = d3.range(sliderMinYear, sliderMaxYear + 1);
 
   // === GLOBAL SPARKLINE ===
-  const globalData = years.map(y => {
-    if (mode === "temp") return { year: y, value: globalTempByYear[y] ?? null };
-    if (mode === "disaster") return { year: y, value: globalDisastersByYear[y] ?? null };
-  }).filter(d => d.value != null);
+  // === GLOBAL SPARKLINE ===
+  updateGlobalSparkline();
 
-  const yScaleGlobal = d3.scaleLinear()
-    .domain([d3.min(globalData, d => d.value), d3.max(globalData, d => d.value)])
-    .range([60, 0]);
-  const xScale = d3.scaleLinear()
-    .domain(d3.extent(years)) // or [sliderMinYear, sliderMaxYear]
-    .range([0, 300]); // adjust width as needed
-
-  const lineGlobal = d3.line()
-    .x(d => xScale(d.year))
-    .y(d => yScaleGlobal(d.value))
-    .curve(d3.curveMonotoneX);
-
-  d3.select("#globalSparkline").selectAll("*").remove();
-  d3.select("#globalSparkline")
-    .append("path")
-    .datum(globalData)
-    .attr("fill", "none")
-    .attr("stroke", "#e63946")
-    .attr("stroke-width", 2)
-    .attr("d", lineGlobal);
 });
 
 // -----------------------------
@@ -229,21 +311,27 @@ function processSeaLevels(gdf) {
 // Country name helper
 // -----------------------------
 function getCountryName(props) {
-  if (props.sovereignt) {
+  // Prefer the territory / administered name
+  let name =
+    props.ADMIN ||
+    props.NAME ||
+    props.formal_en ||
+    props.name_long ||
+    props.BRK_NAME ||
+    props.brk_name;
+
+  // Fall back to sovereign name only if we have nothing better
+  if (!name && props.sovereignt) {
     name = props.sovereignt;
-  } else {
-    name = (
-      props.ADMIN ||
-      props.ADMIN0_A3 ||
-      props.NAME ||
-      props.ADM0_A3 ||
-      props.adm0_a3 ||
-      props.SOV_A3 ||
-      "Unknown"
-    );
   }
+
+  if (!name) {
+    name = "Unknown";
+  }
+
   return name;
 }
+
 
 // -----------------------------
 // Disasters: build lookup + global totals
@@ -456,7 +544,6 @@ function stopPlayback() {
   }
 }
 
-
 // -----------------------------
 // SLIDER + BUTTONS + TOOLTIP
 // -----------------------------
@@ -530,6 +617,53 @@ function setupInteraction() {
   setupTooltip();
 }
 
+// -----------------------------
+// NEW: country search behavior
+// -----------------------------
+function setupCountrySearch() {
+  const input = document.getElementById("countrySearch");
+  const btn = document.getElementById("countrySearchBtn");
+  if (!input || !btn) return;
+
+  const handleSearch = () => {
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const query = raw.toLowerCase();
+    let match = countryLookup[query];
+
+    if (!match) {
+      const keys = Object.keys(countryLookup);
+      const foundKey = keys.find(k => k.includes(query));
+      if (foundKey) match = countryLookup[foundKey];
+    }
+
+    if (!match) {
+      input.classList.add("not-found");
+      setTimeout(() => input.classList.remove("not-found"), 1200);
+      return;
+    }
+
+    input.classList.remove("not-found");
+
+    const { iso, bbox, displayName } = match;
+
+    if (bbox && isFinite(bbox[0][0]) && isFinite(bbox[0][1])) {
+      map.fitBounds(bbox, { padding: 40, duration: 1000 });
+    }
+
+    if (map.getLayer("country-highlight")) {
+      map.setFilter("country-highlight", highlightFilterForISO(iso));
+    }
+
+    updateCountrySparkline(iso, displayName);
+  };
+
+  btn.addEventListener("click", handleSearch);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") handleSearch();
+  });
+}
 
 function setupTooltip() {
   const tooltip = document.getElementById("tooltip");
@@ -544,6 +678,7 @@ function setupTooltip() {
     const features = map.queryRenderedFeatures([xCanvas, yCanvas], { layers: ["climate-fill"] });
     if (!features.length) {
       tooltip.style.display = "none";
+      updateCountrySparkline(); // clear when leaving features
       return;
     }
 
@@ -555,15 +690,17 @@ function setupTooltip() {
     let valueLabel;
     if (mode === "temp") {
       valueLabel = props.value != null ? `${props.value.toFixed(2)}°C` : "N/A";
-    } else {
+    } else if (mode === "disaster") {
       valueLabel = props.value != null ? props.value : "N/A";
+    } else {
+      valueLabel = "N/A";
     }
 
     tooltip.style.display = "block";
     tooltip.innerHTML = `
         <div><strong>${name}</strong></div>
         <div>Year: <strong>${currentYear}</strong></div>
-        <div>${mode === "temp" ? "Temp" : "Disasters"}: <strong>${valueLabel}</strong></div>
+        <div>${mode === "temp" ? "Temp" : (mode === "disaster" ? "Disasters" : "Value")}: <strong>${valueLabel}</strong></div>
     `;
 
     let xTooltip = e.originalEvent.clientX + offset;
@@ -594,7 +731,6 @@ function setupTooltip() {
     updateCountrySparkline();
   });
 }
-
 
 // -----------------------------
 // LEGEND
@@ -707,7 +843,7 @@ function setActiveButton() {
 }
 
 // -----------------------------
-// NEW: Global snapshot panel
+// Global snapshot panel
 // -----------------------------
 function updateSummary(year = currentYear) {
   const tempEl = document.getElementById("summary-temp");
@@ -734,81 +870,467 @@ function updateSummary(year = currentYear) {
 }
 
 function updateGlobalSparkline() {
+  const svg = d3.select("#globalSparkline");
+  if (svg.empty()) return;
+
+  svg.selectAll("*").remove();
+
+  const width = +svg.attr("width") || 300;
+  const height = +svg.attr("height") || 80;
+
+  const margin = { top: 20, right: 10, bottom: 20, left: 46 };
   const years = d3.range(sliderMinYear, sliderMaxYear + 1);
-  const xScale = d3.scaleLinear().domain(d3.extent(years)).range([0, 300]);
 
-  const globalData = years.map(y => {
-    if (mode === "temp") return { year: y, value: globalTempByYear[y] ?? null };
-    if (mode === "disaster") return { year: y, value: globalDisastersByYear[y] ?? null };
-  }).filter(d => d.value != null);
+  // Always show temperature anomalies here (matches the title)
+  const data = years.map(y => ({
+    year: y,
+    value: globalTempByYear[y]
+  })).filter(d => d.value != null);
 
-  if (globalData.length === 0) return;
+  if (data.length === 0) return;
 
-  const yScaleGlobal = d3.scaleLinear()
-    .domain([d3.min(globalData, d => d.value), d3.max(globalData, d => d.value)])
-    .range([60, 0]);
+  const x = d3.scaleLinear()
+    .domain(d3.extent(years))
+    .range([margin.left, width - margin.right]);
 
-  const lineGlobal = d3.line()
-    .x(d => xScale(d.year))
-    .y(d => yScaleGlobal(d.value))
+  const y = d3.scaleLinear()
+    .domain([d3.min(data, d => d.value), d3.max(data, d => d.value)])
+    .range([height - margin.bottom, margin.top]);
+
+  // ========================
+  // TRENDLINE (draw first)
+  // ========================
+  if (data.length > 1) {
+    const n = data.length;
+    const sumX = d3.sum(data, d => d.year);
+    const sumY = d3.sum(data, d => d.value);
+    const sumXY = d3.sum(data, d => d.year * d.value);
+    const sumX2 = d3.sum(data, d => d.year * d.year);
+    const denom = n * sumX2 - sumX * sumX;
+
+    if (denom !== 0) {
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+
+      const trendData = [
+        { year: data[0].year, value: slope * data[0].year + intercept },
+        { year: data[data.length - 1].year, value: slope * data[data.length - 1].year + intercept }
+      ];
+
+      const trendLine = d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d.value));
+
+      svg.append("path")
+        .datum(trendData)
+        .attr("fill", "none")
+        .attr("stroke", "#003f5c")      // dark blue
+        .attr("stroke-width", 2.5)
+        .attr("stroke-dasharray", "6,4")
+        .attr("opacity", 0.85)
+        .attr("d", trendLine);
+    }
+  }
+
+  // ========================
+  // MAIN LINE (global temp)
+  // ========================
+  const mainLine = d3.line()
+    .x(d => x(d.year))
+    .y(d => y(d.value))
     .curve(d3.curveMonotoneX);
 
-  const svg = d3.select("#globalSparkline");
-  svg.selectAll("*").remove();
   svg.append("path")
-    .datum(globalData)
+    .datum(data)
     .attr("fill", "none")
-    .attr("stroke", mode === "temp" ? "#e63946" : "#d62728")
-    .attr("stroke-width", 2)
-    .attr("d", lineGlobal);
+    .attr("stroke", "#d73027")  // bright red
+    .attr("stroke-width", 2.5)
+    .attr("d", mainLine);
+
+  // X-axis labels (start/end years)
+  svg.append("text")
+    .attr("x", margin.left)
+    .attr("y", height - 4)
+    .attr("font-size", 10)
+    .text(sliderMinYear);
+
+  svg.append("text")
+    .attr("x", width - margin.right)
+    .attr("y", height - 4)
+    .attr("font-size", 10)
+    .attr("text-anchor", "end")
+    .text(sliderMaxYear);
+
+  // Y-axis labels (min/max)
+  const maxVal = d3.max(data, d => d.value);
+  const minVal = d3.min(data, d => d.value);
+
+  svg.append("text")
+    .attr("x", 4)
+    .attr("y", margin.top + 4)
+    .attr("font-size", 10)
+    .text(`${maxVal.toFixed(2)}°C`);
+
+  svg.append("text")
+    .attr("x", 4)
+    .attr("y", height - margin.bottom + 2)
+    .attr("font-size", 10)
+    .text(`${minVal.toFixed(2)}°C`);
+
+  // Title inside SVG (to match country charts)
+  svg.append("text")
+    .attr("x", margin.left)
+    .attr("y", margin.top - 6)
+    .attr("font-size", 12)
+    .attr("fill", "#333")
+    .text("Global Temperature Anomaly Trend");
 }
 
+
+
+// -----------------------------
+// NEW: Country sparkline + narrative (mini Option B)
+// -----------------------------
 function updateCountrySparkline(iso, name) {
   const countryContainer = document.getElementById("countrySparklineContainer");
   const countryTitle = document.getElementById("countrySparklineTitle");
-  const svg = d3.select("#countrySparkline");
+  const tempSvg = d3.select("#countryTempSparkline");
+  const disSvg = d3.select("#countryDisasterSparkline");
+  const statsEl = document.getElementById("countryStats");
 
+  if (!countryContainer || !tempSvg.node() || !disSvg.node()) return;
+
+  // Clear & hide if no ISO (e.g., mouse leaves map)
   if (!iso || iso === "") {
-    svg.selectAll("*").remove();
+    tempSvg.selectAll("*").remove();
+    disSvg.selectAll("*").remove();
+    if (statsEl) statsEl.textContent = "";
     countryContainer.style.display = "none";
+
+    if (map.getLayer("country-highlight")) {
+      map.setFilter("country-highlight", highlightFilterForISO(""));
+    }
     return;
   }
 
   const years = d3.range(sliderMinYear, sliderMaxYear + 1);
-  const xScale = d3.scaleLinear().domain(d3.extent(years)).range([0, 300]);
 
-  const countryData = years.map(y => {
-    if (mode === "temp") {
-      const tempRow = tempByISO[iso];
-      return { year: y, value: tempRow ? getTempValue(tempRow, y) : null };
-    } else if (mode === "disaster") {
-      return { year: y, value: disasterByISO[iso] ? disasterByISO[iso][y] ?? null : null };
-    }
-  }).filter(d => d.value != null);
+  // --- Dimensions: a bit taller + larger margins ---
+  const tempWidth  = +tempSvg.attr("width")  || 300;
+  const tempHeight = +tempSvg.attr("height") || 80;
+  const disWidth   = +disSvg.attr("width")   || 300;
+  const disHeight  = +disSvg.attr("height")  || 80;
 
-  if (countryData.length === 0) {
-    svg.selectAll("*").remove();
-    countryContainer.style.display = "none";
+  const margin = { top: 20, right: 10, bottom: 20, left: 46 };
+
+  const xScaleTemp = d3.scaleLinear()
+    .domain(d3.extent(years))
+    .range([margin.left, tempWidth - margin.right]);
+
+  const xScaleDis = d3.scaleLinear()
+    .domain(d3.extent(years))
+    .range([margin.left, disWidth - margin.right]);
+
+  // --- Build country data series ---
+  const tempRow = tempByISO[iso];
+  const countryTempData = years.map(y => ({
+    year: y,
+    value: tempRow ? getTempValue(tempRow, y) : null
+  })).filter(d => d.value != null);
+
+  const disDict = disasterByISO[iso] || {};
+  const countryDisasterData = years.map(y => ({
+    year: y,
+    value: disDict[y] != null ? disDict[y] : null
+  })).filter(d => d.value != null);
+
+  // If absolutely no data, show message
+  if (countryTempData.length === 0 && countryDisasterData.length === 0) {
+    tempSvg.selectAll("*").remove();
+    disSvg.selectAll("*").remove();
+    countryContainer.style.display = "block";
+    if (countryTitle) countryTitle.textContent = `${name} — Climate Story`;
+    if (statsEl) statsEl.textContent = "No country-level data available for this period.";
     return;
   }
 
   countryContainer.style.display = "block";
-  countryTitle.textContent = `${name} Trend`;
+  if (countryTitle) {
+    countryTitle.textContent = `${name} — Climate Story`;
+  }
 
-  const yScaleCountry = d3.scaleLinear()
-    .domain([d3.min(countryData, d => d.value), d3.max(countryData, d => d.value)])
-    .range([60, 0]);
+  // =========================
+  // Temperature sparkline
+  // =========================
+  tempSvg.selectAll("*").remove();
+  if (countryTempData.length > 0) {
+    const tempValues = countryTempData.map(d => d.value);
+    const tempMin = d3.min(tempValues);
+    const tempMax = d3.max(tempValues);
+    const yScaleTemp = d3.scaleLinear()
+      .domain([Math.min(0, tempMin), tempMax])
+      .range([tempHeight - margin.bottom, margin.top]);
 
-  const lineCountry = d3.line()
-    .x(d => xScale(d.year))
-    .y(d => yScaleCountry(d.value))
-    .curve(d3.curveMonotoneX);
+    const tempLine = d3.line()
+      .x(d => xScaleTemp(d.year))
+      .y(d => yScaleTemp(d.value))
+      .curve(d3.curveMonotoneX);
 
-  svg.selectAll("*").remove();
-  svg.append("path")
-    .datum(countryData)
-    .attr("fill", "none")
-    .attr("stroke", "#457b9d")
-    .attr("stroke-width", 2)
-    .attr("d", lineCountry);
+
+    
+    // Main line (temperature anomaly) – bright red
+    tempSvg.append("path")
+      .datum(countryTempData)
+      .attr("fill", "none")
+      .attr("stroke", "#d73027")
+      .attr("stroke-width", 2)
+      .attr("d", tempLine);
+
+    // Linear trendline – dark blue, dashed (much more contrast)
+    if (countryTempData.length > 1) {
+      const n = countryTempData.length;
+      const sumX = d3.sum(countryTempData, d => d.year);
+      const sumY = d3.sum(countryTempData, d => d.value);
+      const sumXY = d3.sum(countryTempData, d => d.year * d.value);
+      const sumX2 = d3.sum(countryTempData, d => d.year * d.year);
+      const denom = n * sumX2 - sumX * sumX;
+
+      if (denom !== 0) {
+        const slope = (n * sumXY - sumX * sumY) / denom;
+        const intercept = (sumY - slope * sumX) / n;
+
+        const trendData = [
+          {
+            year: countryTempData[0].year,
+            value: slope * countryTempData[0].year + intercept
+          },
+          {
+            year: countryTempData[countryTempData.length - 1].year,
+            value: slope * countryTempData[countryTempData.length - 1].year + intercept
+          }
+        ];
+
+        const trendLine = d3.line()
+          .x(d => xScaleTemp(d.year))
+          .y(d => yScaleTemp(d.value));
+
+        // TRENDLINE (draw BEFORE main line to always be visible)
+        tempSvg.append("path")
+          .datum(trendData)
+          .attr("fill", "none")
+          .attr("stroke", "#003f5c")
+          .attr("stroke-width", 2.5)
+          .attr("stroke-dasharray", "6,4")
+          .attr("opacity", 0.85);
+
+      }
+    }
+
+    // Current-year marker line (no text, avoids clutter)
+    if (currentYear >= sliderMinYear && currentYear <= sliderMaxYear) {
+      const markerX = xScaleTemp(currentYear);
+      tempSvg.append("line")
+        .attr("x1", markerX)
+        .attr("x2", markerX)
+        .attr("y1", margin.top)
+        .attr("y2", tempHeight - margin.bottom)
+        .attr("stroke", "#555")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "2,2");
+    }
+
+    // X-axis: start / end years
+    tempSvg.append("text")
+      .attr("x", margin.left)
+      .attr("y", tempHeight - 4)
+      .attr("font-size", 10)
+      .text(sliderMinYear);
+
+    tempSvg.append("text")
+      .attr("x", tempWidth - margin.right)
+      .attr("y", tempHeight - 4)
+      .attr("font-size", 10)
+      .attr("text-anchor", "end")
+      .text(sliderMaxYear);
+
+    // Y-axis: min & max values on left, spaced out vertically
+    tempSvg.append("text")
+      .attr("x", 4)
+      .attr("y", margin.top + 4)
+      .attr("font-size", 10)
+      .text(`${tempMax.toFixed(2)}°C`);
+
+    tempSvg.append("text")
+      .attr("x", 4)
+      .attr("y", tempHeight - margin.bottom + 2)
+      .attr("font-size", 10)
+      .text(`${tempMin.toFixed(2)}°C`);
+
+    // Chart title inside SVG, above the data area
+    tempSvg.append("text")
+      .attr("x", margin.left)
+      .attr("y", margin.top - 6)
+      .attr("font-size", 11)
+      .attr("fill", "#333")
+      .text("Temperature anomaly (°C)");
+  }
+
+  // =========================
+  // Disasters sparkline
+  // =========================
+  disSvg.selectAll("*").remove();
+  if (countryDisasterData.length > 0) {
+    const disValues = countryDisasterData.map(d => d.value);
+    const disMax = d3.max(disValues);
+    const yScaleDis = d3.scaleLinear()
+      .domain([0, disMax])
+      .range([disHeight - margin.bottom, margin.top]);
+
+    const disLine = d3.line()
+      .x(d => xScaleDis(d.year))
+      .y(d => yScaleDis(d.value))
+      .curve(d3.curveMonotoneX);
+
+    // Main line – orange, distinct from temp red + trendline blue
+    disSvg.append("path")
+      .datum(countryDisasterData)
+      .attr("fill", "none")
+      .attr("stroke", "#f39c12")
+      .attr("stroke-width", 2)
+      .attr("d", disLine);
+
+    // Current-year marker
+    if (currentYear >= sliderMinYear && currentYear <= sliderMaxYear) {
+      const markerX = xScaleDis(currentYear);
+      disSvg.append("line")
+        .attr("x1", markerX)
+        .attr("x2", markerX)
+        .attr("y1", margin.top)
+        .attr("y2", disHeight - margin.bottom)
+        .attr("stroke", "#555")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "2,2");
+    }
+
+    // X-axis years
+    disSvg.append("text")
+      .attr("x", margin.left)
+      .attr("y", disHeight - 4)
+      .attr("font-size", 10)
+      .text(sliderMinYear);
+
+    disSvg.append("text")
+      .attr("x", disWidth - margin.right)
+      .attr("y", disHeight - 4)
+      .attr("font-size", 10)
+      .attr("text-anchor", "end")
+      .text(sliderMaxYear);
+
+    // Y-axis max label
+    disSvg.append("text")
+      .attr("x", 4)
+      .attr("y", margin.top + 4)
+      .attr("font-size", 10)
+      .text(`${disMax.toFixed(0)} events/yr`);
+
+    // Chart title
+    disSvg.append("text")
+      .attr("x", margin.left)
+      .attr("y", margin.top - 6)
+      .attr("font-size", 11)
+      .attr("fill", "#333")
+      .text("Climate-related disasters (per year)");
+  }
+
+  // =========================
+  // Narrative stats text
+  // =========================
+  if (statsEl) {
+    const lines = [];
+
+    // Temperature story
+    if (countryTempData.length > 1) {
+      const first = countryTempData[0];
+      const last = countryTempData[countryTempData.length - 1];
+      const tempChange = last.value - first.value;
+
+      const globalStart = globalTempByYear[first.year];
+      const globalEnd = globalTempByYear[last.year];
+      const globalChange =
+        globalStart != null && globalEnd != null
+          ? globalEnd - globalStart
+          : null;
+
+      let sentence = `From ${first.year} to ${last.year}, the average temperature anomaly in ${name} `;
+      if (tempChange >= 0) {
+        sentence += `increased by ${tempChange.toFixed(2)}°C`;
+      } else {
+        sentence += `decreased by ${Math.abs(tempChange).toFixed(2)}°C`;
+      }
+
+      if (globalChange != null) {
+        sentence += `. Over the same period, the global average changed by ${
+          globalChange >= 0
+            ? `${globalChange.toFixed(2)}°C`
+            : `-${Math.abs(globalChange).toFixed(2)}°C`
+        }`;
+
+        const diff = tempChange - globalChange;
+        if (Math.abs(globalChange) > 0.001) {
+          const relPct = (diff / Math.abs(globalChange)) * 100;
+          if (Math.abs(relPct) < 15) {
+            sentence += `, which is fairly close to the global change.`;
+          } else {
+            const direction = relPct > 0 ? "higher" : "lower";
+            sentence += `, which is about ${Math.abs(relPct).toFixed(
+              0
+            )}% ${direction} than the global change.`;
+          }
+        } else {
+          sentence += `, which is larger than the small global change over this period.`;
+        }
+      } else {
+        sentence += `.`;
+      }
+
+      lines.push(sentence);
+    }
+
+    // Disasters story
+    if (countryDisasterData.length > 1) {
+      const firstD = countryDisasterData[0];
+      const lastD = countryDisasterData[countryDisasterData.length - 1];
+      const rawChange = lastD.value - firstD.value;
+
+      let sentence = `Reported climate-related disasters in ${name} `;
+      if (firstD.value > 0) {
+        const pctChange = (rawChange / firstD.value) * 100;
+        if (pctChange >= 0) {
+          sentence += `increased by about ${Math.abs(pctChange).toFixed(0)}%`;
+        } else {
+          sentence += `decreased by about ${Math.abs(pctChange).toFixed(0)}%`;
+        }
+
+        const globalStartD = globalDisastersByYear[firstD.year];
+        const globalEndD = globalDisastersByYear[lastD.year];
+        if (globalStartD != null && globalEndD != null && globalStartD > 0) {
+          const globalPct =
+            ((globalEndD - globalStartD) / globalStartD) * 100;
+          sentence += `, while the global number of disasters changed by roughly ${Math.abs(
+            globalPct
+          ).toFixed(0)}% over the same years.`;
+        } else {
+          sentence += ` over the same period.`;
+        }
+      } else {
+        sentence += `changed from ${firstD.value.toFixed(
+          0
+        )} to ${lastD.value.toFixed(0)} events per year over the same period.`;
+      }
+
+      lines.push(sentence);
+    }
+
+    statsEl.textContent = lines.join(" ");
+  }
 }
