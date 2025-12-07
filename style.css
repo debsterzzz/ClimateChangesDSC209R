@@ -2,29 +2,31 @@ body {
   font-family: 'Inter', 'Segoe UI', sans-serif;
   background: #ebf1f7;
   color: #333;
-  margin-left: 12px;
+  margin: 0px;   /* small padding on left & right instead of big left margin */
 }
 
 #mapContainer {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;   /* anchor to the left instead of centering */
   align-items: flex-start;
-  width: 99%;
-  gap: 10px;
+  width: 100%;
+  gap: 0px;                     /* a bit more breathing room between map & sidebar */
   position: relative;
 }
 
+
 #mapContainer #map {
-  margin: 0 auto;
   position: relative;
-  width: 95%;
+  width: 100%;      /* fill the left side */
   height: 80vh;
   flex: 1;
   border: 1px solid #ccc;
   align-content: center;
-  margin: 0 auto;
+  margin: 0;        /* no auto margins */
   z-index: 1;
 }
+
+
 
 #mapContainer #tooltip {
   all: unset;
@@ -41,20 +43,76 @@ body {
   z-index: 2000;
 }
 
+.tooltip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.tooltip-country {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.tooltip-year {
+  font-size: 12px;
+  color: #666;
+}
+
+.tooltip-row {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.tooltip-metric-label {
+  color: #555;
+}
+
+.tooltip-metric-value {
+  font-weight: 600;
+}
+
+
 #controls {
   display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  margin: 15px 0;
-  padding: 14px 25px;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 10px 16px;
   background: #ffffff;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  align-items: center;
+  flex-wrap: nowrap;           /* keep everything on one row */
 }
+
 
 #controls label {
   font-weight: bold;
+}
+
+
+#globalRibbon {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 10px;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 0.9rem;
+}
+
+#globalRibbon .ribbon-title {
+  font-weight: 600;
+  color: #12335f;
+}
+
+#globalRibbon .ribbon-metric span {
+  font-weight: 600;
 }
 
 button {
@@ -88,9 +146,11 @@ button.active {
   margin-left: auto;
   padding: 8px 12px;
   border-radius: 10px;
-  background: #e4ecff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  background: #ffffff;
+  border: 1px solid #d4dced;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
+
 
 #countrySearchContainer .search-label {
   font-size: 14px;
@@ -101,11 +161,18 @@ button.active {
 #countrySearch {
   padding: 7px 11px;
   border-radius: 6px;
-  border: 1px solid #b4c4e0;
+  border: 1px solid #c3cfe8;
   min-width: 240px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
 }
+
+#countrySearch:focus {
+  outline: none;
+  border-color: #4b6fd3;
+  box-shadow: 0 0 0 2px rgba(75, 111, 211, 0.18);
+}
+
 
 #countrySearch.not-found {
   border-color: #c0392b;
@@ -114,14 +181,18 @@ button.active {
 
 
 #legend {
-  position: relative;
-  padding: 15px;
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  padding: 10px 12px;
   background: white;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 8px;
+  font-size: 13px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   line-height: 16px;
+  z-index: 5;
 }
+
 
 .legend-title {
   font-weight: bold;
@@ -143,12 +214,15 @@ button.active {
 }
 
 #yearSlider {
-  width: 500px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 500px;
   height: 6px;
   background: #7e8ba3;
   border-radius: 4px;
   outline: none;
 }
+
 
 .tooltip-title {
   font-weight: 600;
@@ -247,9 +321,16 @@ button.active {
 #rightPanels {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  width: 20%;
+  gap: 16px;
+  width: 320px;
+  max-width: 360px;
+  position: sticky;
+  top: 120px; /* adjust up/down if needed */
+  height: calc(100vh - 140px);
+  overflow-y: auto;
 }
+
+
 
 #sparklinePanel {
   position: relative;
@@ -259,7 +340,10 @@ button.active {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   font-family: "Inter", sans-serif;
   z-index: 1100;
+  width: 100%;
+  box-sizing: border-box;   /* 🔹 makes padding stay *inside* the 100% width */
 }
+
 
 #sparklinePanel h4 {
   margin: 4px 0 6px 0;
@@ -270,6 +354,61 @@ button.active {
   margin-bottom: 20px;
   display: block;
 }
+
+
+/* Ensure the entire right panel never scrolls horizontally */
+#rightPanel, 
+.storyPanel, 
+#countryStoryContainer, 
+#countryChartsContainer {
+  overflow-x: hidden !important;
+}
+
+/* Prevent sparkline SVGs from forcing horizontal scroll */
+.storyPanel svg {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden;
+  display: block;
+}
+
+/* Remove any accidental extra gap that might push width past container */
+.storyPanel {
+  padding-right: 6px;     /* small safety padding */
+  box-sizing: border-box;
+}
+
+/* Prevent flex children from overflowing horizontally */
+#countryChartsContainer {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;            /* IMPORTANT: allows children to shrink */
+}
+
+.storyPanel * {
+  min-width: 0;            /* prevents inline elements from overflowing */
+}
+
+
+.sparkline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+#globalTrendSelect {
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #ccd3e6;
+  background: #f7f9fc;
+  color: #12335f;
+}
+
 
 /* NEW: country stats text */
 #countryStats {
@@ -335,6 +474,147 @@ button.active {
 
 }
 
-#sparklinePanel {
-  width: 100%;
+
+
+
+.map-wrapper {
+  position: relative;
+  flex: 1;
+}
+/* ===== Annotation Panel (Key Events) ===== */
+#annotationPanel {
+  background: rgba(255, 255, 255, 0.96);
+  padding: 10px 14px;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+}
+
+#annotationPanel h4 {
+  margin: 4px 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #12335f;
+}
+
+.annotation-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.annotation-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: #666;
+}
+
+.annotation-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eceff5;
+}
+
+.annotation-event:last-child {
+  border-bottom: none;
+}
+
+.annotation-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.annotation-icon.volcano,
+.annotation-marker.volcano {
+  border: 2px solid #b22222;
+}
+
+.annotation-icon.heat,
+.annotation-marker.heat {
+  border: 2px solid #e67e22;
+}
+
+.annotation-icon.sea,
+.annotation-marker.sea {
+  border: 2px solid #2980b9;
+}
+
+.annotation-icon.flood,
+.annotation-marker.flood {
+  border: 2px solid #3498db;
+}
+
+.annotation-icon.hurricane,
+.annotation-marker.hurricane {
+  border: 2px solid #8e44ad;
+}
+
+.annotation-icon.tsunami,
+.annotation-marker.tsunami {
+  border: 2px solid #16a085;
+}
+
+.annotation-icon.ice,
+.annotation-marker.ice {
+  border: 2px solid #2c3e50;
+}
+
+.annotation-icon.policy,
+.annotation-marker.policy {
+  border: 2px dashed #2c3e50;
+  background: #fdfdfd;
+}
+
+.annotation-icon.global,
+.annotation-marker.global {
+  border: 2px solid #27ae60;
+}
+
+.annotation-text {
+  flex: 1;
+}
+
+.annotation-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.annotation-desc {
+  font-size: 12px;
+  color: #555;
+  line-height: 1.35;
+}
+
+/* ===== Small map markers for events ===== */
+.annotation-marker {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.annotation-popup-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.annotation-popup-desc {
+  font-size: 12px;
+  line-height: 1.35;
 }

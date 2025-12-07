@@ -64,63 +64,83 @@
     <button id="modeSea">Sea Level</button>
     <button id="modeDisaster">Disasters</button>
 
+    <!-- NEW: Clear button -->
+    <button id="clearSelection">Reset</button>
+
     <!-- NEW: country search -->
     <div id="countrySearchContainer">
   <span class="search-label">See your country's climate story:</span>
   <input
     type="text"
     id="countrySearch"
+    list="countryOptions"
     placeholder="e.g. United States, Brazil, India" />
+  <datalist id="countryOptions">
+    <!-- Options are filled dynamically in buildCountryLookup() -->
+  </datalist>
   <button id="countrySearchBtn">Go</button>
 </div>
 
-  </div>
 
-  <div id="mapContainer">
+  </div>
+  <div id="globalRibbon">
+  <span class="ribbon-title">
+    Global snapshot for <span id="summary-year">1992</span>:
+  </span>
+  <span class="ribbon-metric">
+    Avg temperature anomaly <span id="summary-temp">–</span>
+  </span>
+  <span class="ribbon-metric">
+    Avg sea level <span id="summary-sea">–</span>
+  </span>
+  <span class="ribbon-metric">
+    Total climate disasters <span id="summary-disasters">–</span>
+  </span>
+</div>
+
+<div id="mapContainer">
+  <div class="map-wrapper">
     <div id="map"></div>
     <div id="tooltip"></div>
+    <div id="legend"></div>
+  </div>
 
-    <div id="rightPanels">
-      <div id="summaryPanel">
-        <h3>Global snapshot for <span id="summary-year">1992</span></h3>
-        <p class="summary-subtitle">
-          A quick view of how the planet looked in the selected year.
-        </p>
-
-        <div class="summary-row">
-          <div class="summary-label">Avg temperature anomaly</div>
-          <div class="summary-value" id="summary-temp">–</div>
-        </div>
-
-        <div class="summary-row">
-          <div class="summary-label">Avg sea level</div>
-          <div class="summary-value" id="summary-sea">–</div>
-        </div>
-
-        <div class="summary-row">
-          <div class="summary-label">Total climate disasters</div>
-          <div class="summary-value" id="summary-disasters">–</div>
-        </div>
+  <div id="rightPanels">
+    <!-- Sparkline panel (unchanged logic, just clean structure) -->
+    <div id="sparklinePanel">
+      <div class="sparkline-header">
+        <h4 id="globalSparklineTitle">Global Temperature Anomaly Trend</h4>
+        <select id="globalTrendSelect">
+          <option value="temp">Temperature anomaly</option>
+          <option value="sea">Sea level</option>
+          <option value="disaster">Disaster counts</option>
+        </select>
       </div>
 
-      <div id="legend"></div>
+      <!-- Global trend sparkline -->
+      <svg id="globalSparkline" width="300" height="120"></svg>
 
-      <!-- Sparkline panel -->
-      <div id="sparklinePanel">
-        <h4>Global Temperature Anomaly Trend</h4>
-        <svg id="globalSparkline" width="300" height="120"></svg>
-
-        <div id="countrySparklineContainer" style="display:none; margin-top:10px;">
-          <h4 id="countrySparklineTitle">Your Country's Climate Story</h4>
-          <svg id="countryTempSparkline" width="300" height="120"></svg>
-          <svg id="countryDisasterSparkline" width="300" height="120"></svg>
-          <div id="countryStats"></div>
-        </div>
+      <!-- Country-specific sparklines -->
+      <div id="countrySparklineContainer" style="display:none; margin-top:10px;">
+        <h4 id="countrySparklineTitle">Your Country's Climate Story</h4>
+        <svg id="countryTempSparkline" width="300" height="120"></svg>
+        <svg id="countryDisasterSparkline" width="300" height="120"></svg>
+        <div id="countryStats"></div>
       </div>
-
     </div>
 
+    <!-- NEW: Annotation / key events panel (separate card) -->
+    <div id="annotationPanel">
+      <h4>Key Events in <span id="annotationYear">1992</span></h4>
+      <div id="annotationList" class="annotation-list">
+        <p class="annotation-empty">
+          Move the year slider or press <strong>Play</strong> to see major climate events.
+        </p>
+      </div>
+    </div>
   </div>
+</div>
+
 
   <!-- Takeaway section -->
   <div class="story-section" id="takeaway">
