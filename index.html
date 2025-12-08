@@ -5,41 +5,7 @@
   <meta charset="utf-8" />
   <title>Climate Indicators Map</title>
 
-  <div class="story-section" id="intro">
-    <h1 class="title">How Our Planet Changed from 1992 to 2010</h1>
-
-    <p class="subtitle">
-      In less than one generation, the planet warmed faster than at any point in recorded history.
-      Global averages make this story feel distant &mdash; but the real impact depends on where you live.
-      This explorable explanation lets you uncover how temperature anomalies, sea levels, and climate-related
-      disasters evolved over two decades.
-    </p>
-
-    <p class="story-hook">
-      <strong>What changed in the world between 1992 and 2010 &mdash; and what happened in <em>your</em> country?</strong>
-    </p>
-    <p class="howto-note">
-      The world as a whole is warming, seas are rising, and disasters are becoming more frequent. <br />
-      Global averages can hide what’s happening in specific regions. <br />
-      Use the map and country search to compare the global story with the place you care about most.
-    </p>
-  </div>
-
-  <div class="story-section" id="howto">
-    <h2>How to Explore the Map</h2>
-
-    <ul class="howto-list">
-      <li>Use the <strong>year slider</strong> to move through time.</li>
-      <li>Press <strong>Play</strong> to animate the years automatically.</li>
-      <li>Switch between <strong>Temperature</strong>, <strong>Sea Level</strong>,
-        and <strong>Disasters</strong> using the mode buttons.</li>
-      <li>Hover over any country to see exact values.</li>
-      <li>Use the <strong>country search</strong> to zoom into your home country and see its climate story.</li>
-      <li>The <strong>Global Snapshot Panel</strong> summarizes worldwide conditions for the selected year.</li>
-    </ul>
-
-    
-  </div>
+  
 
   <!-- MapLibre CSS -->
   <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -49,8 +15,98 @@
 </head>
 
 <body>
+<div class="main-shell">
+  <div class="story-section" id="intro">
+  <h1 class="title">How Our Planet Changed in Two Decades</h1>
 
-  <h2>Climate Indicators — Interactive World Map</h2>
+  <p class="subtitle">
+    From 1992 to 2010, the planet warmed, seas rose, and climate-related disasters became more frequent.
+    The scientific record is clear, but humanity's sentiment towards it was not.
+  </p>
+
+  <p class="story-hook">
+    <strong>
+      For nearly two decades, the world argued about whether the climate was truly changing — not because the data was unclear, but because the change was uneven.
+    </strong>
+  </p>
+
+  <p class="howto-note">
+    Global temperatures climbed, sea levels rose, and disasters became more common.<br />
+    Some countries warmed dramatically while others cooled for a few years.
+    Some regions were hit by repeated floods, storms, and heatwaves, while others saw almost nothing unusual.
+    This unevenness made climate change harder to accept, especially in “quieter” places.<br />
+    The phrase <em>“global warming”</em> was meant to raise awareness — but it ultimately became a double-edged sword.
+    Skeptics pointed to cold winters or stable regions and claimed the whole idea was exaggerated,
+    mistaking local weather for global climate.<br />
+    To understand what really happened, we need to see both stories at once:
+    the planet as a whole, and the specific country we care about most.
+  </p>
+
+  <p class="howto-note">
+    This explorable explanation lets you do exactly that. You can watch the world change over time,
+    then zoom into a single country and ask: <em>How does my local experience fit into the global pattern?</em>
+  </p>
+</div>
+
+  
+
+  <div class="story-section" id="howto">
+    <h2>How to Explore the Map</h2>
+
+    <p class="howto-note">
+    Use the controls below to compare the world’s climate story with your own country’s experience.
+    The goal isn’t just to see rising numbers, but to understand <em>why</em> climate change felt urgent
+    in some places and distant in others.
+    </p>
+
+    <ul class="howto-list">
+      <li>Use the <strong>year slider</strong> to move through time.</li>
+      <li>Press <strong>Play</strong> to animate the years automatically.</li>
+      <li>Switch between <strong>Temperature</strong>, <strong>Sea Level</strong>,
+        and <strong>Disasters</strong> using the mode buttons.</li>
+      <li>Learn about major climate related events through the <strong>Key Events Panel</strong> or by hovering over the <strong> Icons </strong> that appear on the map</li>
+      <li>Hover over any country to see exact values.</li>
+      <li>Use the <strong>Country Search</strong> feature to zoom into your home country and discover its <strong>climate story</strong> through <strong>sparkline graphs</strong> and a short summary.</li>
+      <li>The <strong>Global Snapshot Bar</strong> summarizes worldwide conditions for the selected year.</li>
+      <li>Switch between global temperature anomaly, sea level, and disaster count charts in the right panel while exploring in any mode. Easily discover any correlations between these metrics on a global scale or a selected country.</li>
+      <li>Click <strong>Reset</strong> to clear any selected country and reset to map to its default zoom.</li>
+    </ul>
+
+    
+  </div>
+
+  <div class="story-section" id="events">
+  <h2>Why These Events Matter</h2>
+
+  <p>
+    As you move through time, you’ll see key events appear on the map and in the
+    <strong>Key Events</strong> panel on the right:
+    volcanic eruptions, record heatwaves, major hurricanes, historic floods, and global climate negotiations.
+    Each marker represents a moment when the climate story became impossible to ignore in a specific place.
+  </p>
+
+  <p>
+    Some events temporarily cooled the planet, like the aerosols from the 1991 Mount Pinatubo eruption.
+    Others pushed temperatures to new records or unleashed devastating disasters in regions that had rarely
+    seen such extremes before. Policy milestones — like the Rio Earth Summit or the Kyoto Protocol —
+    capture how slowly our global response evolved compared to the pace of physical change.
+  </p>
+
+  <p>
+    These events help explain why climate change was so hard to recognize as a shared reality.
+    For people living far from these disasters, or in regions that cooled for a few years,
+    the crisis could feel distant or even exaggerated. By placing these events on top of the global data,
+    the visualization shows how local shocks and long-term trends combine into one uneven,
+    but unmistakable, planetary shift.
+  </p>
+</div>
+
+
+
+
+
+  <h2 id="mapTitle">Climate Indicators — Interactive World Map</h2>
+
 
   <div id="controls">
     <label for="yearSlider">Year: <span id="yearLabel">1992</span></label>
@@ -144,18 +200,38 @@
 
   <!-- Takeaway section -->
   <div class="story-section" id="takeaway">
-    <h2>What Should You Take Away?</h2>
-    <p>
-      Together, the global map and the country search show that climate change is both a planetary story and a local one.
-      Many countries move from mild anomalies to persistent warming, while climate-related disasters become more common over time.
-      If your country’s lines trend upward, it means that the abstract idea of “global warming” is already visible in your own backyard.
-    </p>
-    <p>
-      The goal of this visualization is not just to show rising numbers, but to help you connect global trends to a place you know.
-      When the global patterns and your country’s story line up, it becomes harder to dismiss climate change as something happening “somewhere else.”
-    </p>
+  <h2>What Should You Take Away?</h2>
+
+  <p>
+    The main insight from this visualization is that climate change is not a single smooth line —
+    it is thousands of regional stories unfolding at different speeds.
+    Some countries warm twice as fast as the global average, others cool temporarily,
+    and some see sharp jumps in disaster frequency while their neighbors remain relatively quiet.
+  </p>
+
+  <p>
+    For decades, this unevenness slowed global acceptance. People looked out their window,
+    saw familiar seasons, and wondered how “global warming” could be real.
+    The term itself became a rhetorical trap: cold winters and local cooling were used as proof
+    that the science was wrong, rather than as natural variation layered on top of a clear long-term trend.
+  </p>
+
+  <p>
+    By letting you compare the planet’s overall trajectory with any single country,
+    this visualization closes that gap between <em>global evidence</em> and <em>local experience</em>.
+    When you see both stories side by side, the pattern becomes hard to dismiss:
+    the world really did change between 1992 and 2010 — even if it didn’t always feel that way
+    where you happened to live.
+  </p>
+
+  <p>
+    Climate change is no longer an abstract debate. It is a set of concrete histories written into the
+    temperature, sea level, and disaster records of every country on Earth.
+    The question moving forward is not whether it is happening, but how we choose to respond.
+  </p>
   </div>
 
+</div>
   <!-- MapLibre JS -->
   <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
 
