@@ -1320,20 +1320,55 @@ function setupTooltip() {
         `;
 
 
-    let xTooltip = e.originalEvent.clientX + offset;
-    let yTooltip = e.originalEvent.clientY - canvasRect.top + offset;
+        // Position tooltip relative to the mapContainer, not the whole window
+    const mapEl = document.getElementById("map");
+const mapRect = mapEl.getBoundingClientRect();
 
-    const tooltipRect = tooltip.getBoundingClientRect();
+// Mouse position relative to the map itself
+let relX = e.originalEvent.clientX - mapRect.left;
+let relY = e.originalEvent.clientY - mapRect.top;
 
-    if (xTooltip + tooltipRect.width > window.innerWidth) {
-      xTooltip = e.originalEvent.clientX - tooltipRect.width - offset;
+let xTooltip = relX + offset;
+let yTooltip = relY + offset;
+
+const tooltipRect = tooltip.getBoundingClientRect();
+const mapWidth  = mapRect.width;
+const mapHeight = mapRect.height;
+
+// Keep tooltip inside map boundaries
+if (xTooltip + tooltipRect.width > mapWidth) {
+  xTooltip = mapWidth - tooltipRect.width - offset;
+}
+if (xTooltip < 0) xTooltip = offset;
+
+if (yTooltip + tooltipRect.height > mapHeight) {
+  yTooltip = mapHeight - tooltipRect.height - offset;
+}
+if (yTooltip < 0) yTooltip = offset;
+
+tooltip.style.left = `${xTooltip}px`;
+tooltip.style.top  = `${yTooltip}px`;
+
+
+    // Clamp horizontally inside the container
+    if (xTooltip + tooltipRect.width > containerWidth) {
+      xTooltip = containerWidth - tooltipRect.width - offset;
     }
-    if (yTooltip + tooltipRect.height > window.innerHeight) {
-      yTooltip = window.innerHeight - tooltipRect.height - offset;
+    if (xTooltip < 0) {
+      xTooltip = offset;
+    }
+
+    // Clamp vertically inside the container
+    if (yTooltip + tooltipRect.height > containerHeight) {
+      yTooltip = containerHeight - tooltipRect.height - offset;
+    }
+    if (yTooltip < 0) {
+      yTooltip = offset;
     }
 
     tooltip.style.left = `${xTooltip}px`;
-    tooltip.style.top = `${yTooltip}px`;
+    tooltip.style.top  = `${yTooltip}px`;
+
 
     updateCountrySparkline(iso, name);
   });
